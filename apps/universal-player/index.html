@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b0f17" />
+  <meta name="description" content="Reproductor multimedia universal local-first (vídeo, audio y subtítulos SRT/VTT) para tu homelab." />
+  <title>Universal Player PWA — Homelab Media</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Barra superior -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">▶</div>
+        <div>
+          <h1>Universal Player</h1>
+          <span class="privacy-badge" title="Procesamiento 100% en navegador mediante HTML5 File API">
+            🔒 100% Local-First · Sin subida al servidor
+          </span>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button id="btnAddFiles" class="btn btn-primary" type="button">
+          <span>+ Archivos</span>
+        </button>
+        <button id="btnAddFolder" class="btn btn-secondary" type="button" title="Cargar carpeta completa (incluyendo subtítulos .srt/.vtt)">
+          <span>📁 Carpeta</span>
+        </button>
+        <button id="btnLoadSubtitle" class="btn btn-secondary" type="button" title="Cargar subtítulos .srt, .vtt o .ass para el archivo actual">
+          <span>CC Subtítulo</span>
+        </button>
+        <button id="btnShortcuts" class="btn btn-ghost" type="button" title="Atajos de teclado (?)">
+          <span>⌨️</span>
+        </button>
+      </div>
+
+      <!-- Inputs ocultos -->
+      <input
+        id="fileInput"
+        type="file"
+        multiple
+        accept="video/*,audio/*,.mkv,.webm,.mp4,.mov,.m4v,.avi,.ogg,.ogv,.mp3,.flac,.wav,.m4a,.opus,.aac,.srt,.vtt,.ass,.ssa"
+        hidden
+      />
+      <input id="folderInput" type="file" webkitdirectory directory multiple hidden />
+      <input id="subtitleInput" type="file" accept=".srt,.vtt,.ass,.ssa,text/vtt" hidden />
+    </header>
+
+    <!-- Contenido principal -->
+    <main class="main-layout">
+      <!-- Escenario del reproductor -->
+      <section class="player-column">
+        <div id="playerStage" class="player-stage" tabindex="0">
+          <video id="mediaElement" playsinline preload="metadata" crossorigin="anonymous"></video>
+
+          <!-- Overlay visualizador para archivos de solo audio -->
+          <div id="audioVisualOverlay" class="audio-overlay hidden">
+            <canvas id="audioCanvas" width="640" height="200"></canvas>
+            <div class="audio-meta">
+              <div class="audio-disc" aria-hidden="true">♪</div>
+              <h2 id="audioTrackTitle">Sin pista cargada</h2>
+              <p id="audioTrackInfo">Audio local de alta fidelidad</p>
+            </div>
+          </div>
+
+          <!-- Pantalla vacía / Zona drag & drop -->
+          <div id="emptyState" class="empty-state">
+            <div class="drop-icon" aria-hidden="true">🎬</div>
+            <h2>Arrastra tus vídeos, música o subtítulos aquí</h2>
+            <p>
+              Compatible con <strong>MP4, WebM, MKV*, MP3, FLAC, OGG, WAV</strong> y subtítulos
+              <strong>.SRT / .VTT / .ASS</strong> con conversión automática en el navegador.
+            </p>
+            <div class="empty-actions">
+              <button id="btnEmptyPickFiles" class="btn btn-primary" type="button">Seleccionar archivos locales</button>
+              <button id="btnEmptyPickFolder" class="btn btn-secondary" type="button">Abrir carpeta</button>
+            </div>
+            <small class="hint">* La reproducción de contenedores MKV/HEVC depende de los códecs nativos del navegador.</small>
+          </div>
+
+          <!-- Indicador de arrastre activo -->
+          <div id="dragOverlay" class="drag-overlay hidden">
+            <div class="drag-box">Suelta archivos de vídeo, audio o subtítulos (.srt / .vtt)</div>
+          </div>
+
+          <!-- Notificación de reanudación de progreso -->
+          <div id="resumeToast" class="resume-toast hidden" role="status">
+            <span id="resumeToastText">Reanudando desde 00:00</span>
+            <button id="btnRestartFromZero" class="btn-link" type="button">Empezar desde 0:00</button>
+            <button id="btnCloseToast" class="btn-icon-sm" type="button" aria-label="Cerrar">✕</button>
+          </div>
+
+          <!-- Toast genérico de estado -->
+          <div id="statusPill" class="status-pill hidden" role="status"></div>
+        </div>
+
+        <!-- Barra de controles personalizados -->
+        <div class="controls-panel">
+          <!-- Información del archivo actual -->
+          <div class="now-playing-row">
+            <div class="now-playing-info">
+              <span id="mediaTypeBadge" class="badge badge-idle">LISTO</span>
+              <span id="currentTitle" class="current-title">Ningún archivo seleccionado</span>
+            </div>
+            <div class="subtitle-controls">
+              <span id="subtitleLabel" class="subtitle-label" title="Subtítulo cargado">Sin subtítulos</span>
+              <button id="btnToggleSub" class="btn-chip" type="button" disabled title="Activar/desactivar subtítulos (C)">CC</button>
+              <button id="btnSubDelayMinus" class="btn-chip" type="button" disabled title="Adelantar subtítulos -0.5s">-0.5s</button>
+              <span id="subOffsetDisplay" class="sub-offset">0.0s</span>
+              <button id="btnSubDelayPlus" class="btn-chip" type="button" disabled title="Retrasar subtítulos +0.5s">+0.5s</button>
+              <select id="subSizeSelect" class="select-compact" title="Tamaño de subtítulos" aria-label="Tamaño de subtítulos">
+                <option value="sub-sm">CC Pequeño</option>
+                <option value="sub-md" selected>CC Normal</option>
+                <option value="sub-lg">CC Grande</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Línea de tiempo -->
+          <div class="timeline-row">
+            <span id="timeCurrent" class="time-code">00:00</span>
+            <div class="seek-wrapper">
+              <input id="seekBar" type="range" min="0" max="1000" value="0" step="1" aria-label="Progreso de reproducción" />
+            </div>
+            <span id="timeTotal" class="time-code">00:00</span>
+          </div>
+
+          <!-- Botonera principal -->
+          <div class="buttons-row">
+            <div class="controls-left">
+              <button id="btnPrev" class="ctrl-btn" type="button" title="Anterior (P)" aria-label="Anterior">⏮</button>
+              <button id="btnRewind" class="ctrl-btn" type="button" title="Retroceder 10s (←)" aria-label="Retroceder 10 segundos">↺10</button>
+              <button id="btnPlayPause" class="ctrl-btn ctrl-play" type="button" title="Reproducir / Pausar (Espacio)" aria-label="Reproducir o pausar">▶</button>
+              <button id="btnForward" class="ctrl-btn" type="button" title="Avanzar 10s (→)" aria-label="Avanzar 10 segundos">10↻</button>
+              <button id="btnNext" class="ctrl-btn" type="button" title="Siguiente (N)" aria-label="Siguiente">⏭</button>
+            </div>
+
+            <div class="controls-right">
+              <div class="volume-group">
+                <button id="btnMute" class="ctrl-btn" type="button" title="Silenciar (M)" aria-label="Silenciar">🔊</button>
+                <input id="volumeBar" type="range" min="0" max="1" step="0.02" value="1" aria-label="Volumen" />
+              </div>
+
+              <select id="speedSelect" class="select-compact" title="Velocidad de reproducción" aria-label="Velocidad">
+                <option value="0.5">0.5x</option>
+                <option value="0.75">0.75x</option>
+                <option value="1" selected>1.0x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.5x</option>
+                <option value="1.75">1.75x</option>
+                <option value="2">2.0x</option>
+              </select>
+
+              <button id="btnPiP" class="ctrl-btn" type="button" title="Imagen en imagen (PiP)" aria-label="Imagen en imagen">⧉</button>
+              <button id="btnFullscreen" class="ctrl-btn" type="button" title="Pantalla completa (F)" aria-label="Pantalla completa">⛶</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Barra lateral: Lista de reproducción e historial -->
+      <aside class="sidebar-column">
+        <div class="sidebar-tabs" role="tablist">
+          <button id="tabQueue" class="tab-btn active" role="tab" aria-selected="true" type="button">
+            Cola (<span id="queueCount">0</span>)
+          </button>
+          <button id="tabHistory" class="tab-btn" role="tab" aria-selected="false" type="button">
+            Recientes (<span id="historyCount">0</span>)
+          </button>
+        </div>
+
+        <!-- Panel Cola -->
+        <div id="panelQueue" class="sidebar-panel">
+          <div class="queue-toolbar">
+            <input id="queueSearch" class="search-input" type="search" placeholder="Filtrar lista..." aria-label="Filtrar lista" />
+            <div class="queue-mode-btns">
+              <button id="btnShuffle" class="btn-chip" type="button" title="Modo aleatorio">🔀</button>
+              <button id="btnRepeat" class="btn-chip" type="button" title="Repetición: desactivada">🔁 Off</button>
+              <button id="btnClearQueue" class="btn-chip btn-danger-subtle" type="button" title="Limpiar cola">🗑️</button>
+            </div>
+          </div>
+          <ul id="playlistList" class="playlist-list">
+            <li class="playlist-empty">No hay archivos en la cola todavía.</li>
+          </ul>
+        </div>
+
+        <!-- Panel Recientes (IndexedDB / localStorage) -->
+        <div id="panelHistory" class="sidebar-panel hidden">
+          <div class="history-toolbar">
+            <span class="storage-info" id="storageEngineLabel">Persistencia: IndexedDB</span>
+            <button id="btnClearHistory" class="btn-chip btn-danger-subtle" type="button">Borrar historial</button>
+          </div>
+          <p class="history-hint">
+            El navegador recuerda automáticamente el minuto exacto de cada archivo. Vuelve a seleccionarlo para continuar donde lo dejaste.
+          </p>
+          <ul id="historyList" class="playlist-list">
+            <li class="playlist-empty">Sin reproducciones guardadas.</li>
+          </ul>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Modal de atajos de teclado -->
+  <div id="shortcutsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="shortcutsTitle">Atajos de Teclado</h3>
+        <button id="btnCloseShortcuts" class="btn-icon-sm" type="button" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="shortcuts-grid">
+        <div><kbd>Espacio</kbd> / <kbd>K</kbd></div><div>Reproducir / Pausar</div>
+        <div><kbd>←</kbd> / <kbd>→</kbd></div><div>Retroceder / Avanzar 10s</div>
+        <div><kbd>↑</kbd> / <kbd>↓</kbd></div><div>Subir / Bajar volumen 5%</div>
+        <div><kbd>M</kbd></div><div>Silenciar / Activar sonido</div>
+        <div><kbd>F</kbd></div><div>Pantalla completa</div>
+        <div><kbd>C</kbd></div><div>Activar / Ocultar subtítulos</div>
+        <div><kbd>N</kbd> / <kbd>P</kbd></div><div>Siguiente / Anterior pista</div>
+        <div><kbd>?</kbd></div><div>Mostrar / Ocultar esta ayuda</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

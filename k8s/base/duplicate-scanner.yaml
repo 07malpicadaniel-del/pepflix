@@ -1,0 +1,456 @@
+# ==============================================================================
+# Módulo 7 — Escáner No Destructivo de Duplicados (Czkawka CLI — CronJob)
+# - Se ejecuta cada domingo a las 04:00 (0 4 * * 0)
+# - Monta `/mnt/storage/media` en modo SOLO LECTURA (`readOnly: true`):
+#   es físicamente imposible borrar o modificar archivos multimedia.
+# - Usa el binario oficial ARM64 de `czkawka_cli` (descargado y cacheado en
+#   `/mnt/storage/appdata/czkawka/bin/czkawka_cli`), ejecuta `czkawka_cli dup --dry-run`
+#   y genera informes JSON + HTML enriquecidos con detección de inodos/hardlinks
+#   en `/mnt/storage/appdata/reports/`.
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: duplicate-scanner-script
+  namespace: homelab-media
+data:
+  run_scan.py: |
+    #!/usr/bin/env python3
+    """
+    Escáner no destructivo de archivos multimedia duplicados con Czkawka CLI.
+    Nunca elimina ni mueve archivos: `/media` está montado estrictamente read-only.
+    Genera informes JSON y HTML en `/reports` (`/mnt/storage/appdata/reports`).
+    """
+    from __future__ import annotations
+
+    import hashlib
+    import html
+    import io
+    import json
+    import os
+    import platform
+    import shutil
+    import stat
+    import subprocess
+    import tarfile
+    import urllib.request
+    import zipfile
+    from collections import defaultdict
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    MEDIA_DIR = Path("/media")
+    REPORTS_DIR = Path("/reports")
+    TOOLS_BIN_DIR = Path("/tools/bin")
+    CZKAWKA_BIN = TOOLS_BIN_DIR / "czkawka_cli"
+    MIN_FILE_SIZE_BYTES = int(os.getenv("MIN_FILE_SIZE_BYTES", str(1024 * 1024)))  # 1 MiB
+
+
+    def human_bytes(num: int) -> str:
+        val = float(num)
+        for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+            if val < 1024.0:
+                return f"{val:.1f} {unit}"
+            val /= 1024.0
+        return f"{val:.1f} PiB"
+
+
+    def ensure_czkawka_binary() -> Path | None:
+        """Obtiene o reutiliza el binario oficial de czkawka_cli para aarch64/x86_64."""
+        if CZKAWKA_BIN.exists() and os.access(CZKAWKA_BIN, os.X_OK):
+            return CZKAWKA_BIN
+
+        TOOLS_BIN_DIR.mkdir(parents=True, exist_ok=True)
+        machine = platform.machine().lower()
+        arch_tokens = ("aarch64", "arm64") if machine in ("aarch64", "arm64") else ("x86_64", "amd64")
+
+        api_url = "https://api.github.com/repos/qarmin/czkawka/releases/latest"
+        try:
+            req = urllib.request.Request(api_url, headers={"User-Agent": "homelab-media-scanner"})
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                release = json.loads(resp.read().decode("utf-8"))
+
+            assets = release.get("assets", [])
+            selected = None
+            for asset in assets:
+                name = asset.get("name", "").lower()
+                if "linux" in name and any(tok in name for tok in arch_tokens):
+                    if "czkawka_cli" in name:
+                        selected = asset
+                        break
+                    if "all" in name and (name.endswith(".tar.xz") or name.endswith(".tar.gz") or name.endswith(".zip")):
+                        selected = asset
+
+            if not selected:
+                print(f"[WARN] No se encontró asset Linux/{machine} de czkawka_cli en GitHub Releases.")
+                return None
+
+            download_url = selected["browser_download_url"]
+            asset_name = selected["name"]
+            print(f"[INFO] Descargando Czkawka CLI ({asset_name})...")
+            dl_req = urllib.request.Request(download_url, headers={"User-Agent": "homelab-media-scanner"})
+            with urllib.request.urlopen(dl_req, timeout=120) as resp:
+                raw_bytes = resp.read()
+
+            if asset_name.endswith((".tar.xz", ".tar.gz", ".tgz")):
+                with tarfile.open(fileobj=io.BytesIO(raw_bytes), mode="r:*") as tf:
+                    member = next((m for m in tf.getmembers() if m.isfile() and os.path.basename(m.name) == "czkawka_cli"), None)
+                    if not member:
+                        return None
+                    with tf.extractfile(member) as src, open(CZKAWKA_BIN, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+            elif asset_name.endswith(".zip"):
+                with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+                    entry = next((n for n in zf.namelist() if os.path.basename(n) == "czkawka_cli"), None)
+                    if not entry:
+                        return None
+                    with zf.open(entry) as src, open(CZKAWKA_BIN, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+            else:
+                CZKAWKA_BIN.write_bytes(raw_bytes)
+
+            CZKAWKA_BIN.chmod(CZKAWKA_BIN.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            print(f"[OK] Czkawka CLI listo en {CZKAWKA_BIN}")
+            return CZKAWKA_BIN
+        except Exception as exc:
+            print(f"[WARN] No se pudo descargar czkawka_cli ({exc}); usando escáner SHA-256 offline de respaldo.")
+            return None
+
+
+    def parse_czkawka_json(json_path: Path) -> list[list[dict]]:
+        """Normaliza la estructura JSON devuelta por czkawka_cli dup."""
+        if not json_path.exists():
+            return []
+        try:
+            raw = json.loads(json_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return []
+
+        groups: list[list[dict]] = []
+        if isinstance(raw, dict):
+            # Formato czkawka_cli: { "<size>": [ [ { "path": ..., "size": ..., "modified_date": ... }, ... ] ] }
+            for _size_key, size_groups in raw.items():
+                if isinstance(size_groups, list):
+                    for grp in size_groups:
+                        if isinstance(grp, list) and len(grp) >= 2:
+                            groups.append(grp)
+        elif isinstance(raw, list):
+            for grp in raw:
+                if isinstance(grp, list) and len(grp) >= 2:
+                    groups.append(grp)
+        return groups
+
+
+    def fallback_sha256_scan(root: Path) -> list[list[dict]]:
+        """Escáner no destructivo SHA-256 de respaldo cuando no hay conectividad a GitHub."""
+        by_size: dict[int, list[Path]] = defaultdict(list)
+        for dirpath, _dirs, filenames in os.walk(root):
+            for fname in filenames:
+                p = Path(dirpath) / fname
+                try:
+                    st = p.stat()
+                    if stat.S_ISREG(st.st_mode) and st.st_size >= MIN_FILE_SIZE_BYTES:
+                        by_size[st.st_size].append(p)
+                except OSError:
+                    continue
+
+        groups: list[list[dict]] = []
+        for size, paths in by_size.items():
+            if len(paths) < 2:
+                continue
+            by_hash: dict[str, list[dict]] = defaultdict(list)
+            for p in paths:
+                h = hashlib.sha256()
+                try:
+                    with open(p, "rb") as f:
+                        while chunk := f.read(1024 * 1024):
+                            h.update(chunk)
+                    st = p.stat()
+                    by_hash[h.hexdigest()].append({
+                        "path": str(p),
+                        "size": size,
+                        "modified_date": int(st.st_mtime),
+                    })
+                except OSError:
+                    continue
+            for items in by_hash.values():
+                if len(items) >= 2:
+                    groups.append(items)
+        return groups
+
+
+    def enrich_with_inodes(groups: list[list[dict]]) -> tuple[list[dict], int, int]:
+        """Distingue duplicados reales en disco de hardlinks que comparten el mismo inodo."""
+        enriched = []
+        reclaimable_bytes = 0
+        hardlink_only_groups = 0
+
+        for idx, grp in enumerate(groups, start=1):
+            entries = []
+            unique_inodes = set()
+            file_size = 0
+            for item in grp:
+                path_str = item.get("path", "")
+                size = int(item.get("size", 0))
+                file_size = max(file_size, size)
+                inode = None
+                nlink = 1
+                try:
+                    st = os.stat(path_str)
+                    inode = f"{st.st_dev}:{st.st_ino}"
+                    nlink = st.st_nlink
+                    unique_inodes.add(inode)
+                except OSError:
+                    pass
+                entries.append({
+                    "path": path_str,
+                    "size_bytes": size,
+                    "size_human": human_bytes(size),
+                    "inode": inode,
+                    "hardlink_count": nlink,
+                })
+
+            extra_copies = max(0, len(unique_inodes) - 1) if unique_inodes else max(0, len(entries) - 1)
+            wasted = extra_copies * file_size
+            reclaimable_bytes += wasted
+            is_hardlink_only = len(unique_inodes) == 1 and len(entries) > 1
+            if is_hardlink_only:
+                hardlink_only_groups += 1
+
+            enriched.append({
+                "group_id": idx,
+                "file_size_bytes": file_size,
+                "file_size_human": human_bytes(file_size),
+                "copies": len(entries),
+                "unique_inodes": len(unique_inodes),
+                "is_hardlink_only": is_hardlink_only,
+                "reclaimable_bytes": wasted,
+                "reclaimable_human": human_bytes(wasted),
+                "files": entries,
+            })
+
+        enriched.sort(key=lambda g: g["reclaimable_bytes"], reverse=True)
+        return enriched, reclaimable_bytes, hardlink_only_groups
+
+
+    def render_html(report: dict) -> str:
+        rows = []
+        for g in report["duplicate_groups"]:
+            badge = (
+                '<span class="badge hl">Solo Hardlinks (0 B extra)</span>'
+                if g["is_hardlink_only"]
+                else f'<span class="badge dup">Duplicado real · +{html.escape(g["reclaimable_human"])}</span>'
+            )
+            files_html = "".join(
+                f"<li><code>{html.escape(f['path'])}</code> "
+                f"<span class='meta'>(inodo {html.escape(str(f['inode']))}, links={f['hardlink_count']})</span></li>"
+                for f in g["files"]
+            )
+            rows.append(
+                f"<section class='group'>"
+                f"<div class='group-head'><strong>Grupo #{g['group_id']}</strong> — "
+                f"{html.escape(g['file_size_human'])} × {g['copies']} copias {badge}</div>"
+                f"<ul>{files_html}</ul></section>"
+            )
+
+        body_content = "".join(rows) if rows else "<p class='ok'>✓ No se detectaron archivos duplicados en /mnt/storage/media.</p>"
+        return f"""<!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Informe Anti-Duplicados — Homelab Media</title>
+      <style>
+        body {{ background:#0b101b; color:#f1f5f9; font-family:system-ui,sans-serif; margin:0; padding:24px; }}
+        .wrap {{ max-width:1100px; margin:0 auto; }}
+        h1 {{ margin:0 0 8px; font-size:1.5rem; }}
+        .sub {{ color:#94a3b8; margin-bottom:20px; font-size:0.9rem; }}
+        .cards {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; margin-bottom:24px; }}
+        .card {{ background:#121a2b; border:1px solid rgba(148,163,184,0.2); border-radius:10px; padding:14px; }}
+        .card span {{ display:block; color:#94a3b8; font-size:0.78rem; text-transform:uppercase; }}
+        .card strong {{ font-size:1.25rem; }}
+        .group {{ background:#121a2b; border:1px solid rgba(148,163,184,0.2); border-radius:10px; padding:14px 16px; margin-bottom:12px; }}
+        .group-head {{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }}
+        ul {{ margin:0; padding-left:20px; }}
+        li {{ margin:4px 0; word-break:break-all; font-size:0.88rem; }}
+        code {{ color:#bae6fd; }}
+        .meta {{ color:#64748b; font-size:0.78rem; }}
+        .badge {{ font-size:0.74rem; padding:2px 8px; border-radius:999px; font-weight:700; }}
+        .badge.dup {{ background:rgba(245,158,11,0.2); color:#fcd34d; }}
+        .badge.hl {{ background:rgba(34,197,94,0.18); color:#86efac; }}
+        .ok {{ background:rgba(34,197,94,0.12); border:1px solid rgba(34,197,94,0.35); color:#86efac; padding:18px; border-radius:10px; }}
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <h1>Informe de Detección de Duplicados (Modo Solo Lectura)</h1>
+        <p class="sub">Generado: {html.escape(report['generated_at'])} · Motor: {html.escape(report['engine'])} · Ruta: <code>/mnt/storage/media</code> (sin borrado automático)</p>
+        <div class="cards">
+          <div class="card"><span>Grupos detectados</span><strong>{report['summary']['total_groups']}</strong></div>
+          <div class="card"><span>Espacio recuperable real</span><strong>{html.escape(report['summary']['reclaimable_human'])}</strong></div>
+          <div class="card"><span>Grupos solo-hardlink</span><strong>{report['summary']['hardlink_only_groups']}</strong></div>
+          <div class="card"><span>Acción ejecutada</span><strong>Solo Reporte (RO)</strong></div>
+        </div>
+        {body_content}
+      </div>
+    </body>
+    </html>
+    """
+
+
+    def main() -> None:
+        REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        raw_czk_json = REPORTS_DIR / f".czkawka-raw-{ts}.json"
+        raw_czk_txt = REPORTS_DIR / f"czkawka-duplicates-{ts}.txt"
+
+        czk_bin = ensure_czkawka_binary()
+        engine = "czkawka_cli"
+        groups: list[list[dict]] = []
+
+        if czk_bin:
+            cmd = [
+                str(czk_bin),
+                "dup",
+                "-d", str(MEDIA_DIR),
+                "-m", str(MIN_FILE_SIZE_BYTES),
+                "--dry-run",
+                "-N",
+                "-p", str(raw_czk_json),
+                "-f", str(raw_czk_txt),
+            ]
+            print(f"[INFO] Ejecutando: {' '.join(cmd)}")
+            res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            if res.stdout:
+                print(res.stdout)
+            if res.stderr:
+                print(res.stderr)
+            # Czkawka devuelve 0 (sin duplicados) u 11 (duplicados encontrados)
+            if res.returncode in (0, 11) and raw_czk_json.exists():
+                groups = parse_czkawka_json(raw_czk_json)
+            else:
+                print(f"[WARN] czkawka_cli terminó con código {res.returncode}; ejecutando respaldo SHA-256.")
+                engine = "python-sha256-fallback"
+                groups = fallback_sha256_scan(MEDIA_DIR)
+        else:
+            engine = "python-sha256-fallback"
+            groups = fallback_sha256_scan(MEDIA_DIR)
+
+        enriched, reclaimable, hardlink_only = enrich_with_inodes(groups)
+
+        report = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "mode": "read-only-report-only",
+            "scanned_path": "/mnt/storage/media",
+            "engine": engine,
+            "summary": {
+                "total_groups": len(enriched),
+                "hardlink_only_groups": hardlink_only,
+                "real_duplicate_groups": len(enriched) - hardlink_only,
+                "reclaimable_bytes": reclaimable,
+                "reclaimable_human": human_bytes(reclaimable),
+            },
+            "duplicate_groups": enriched,
+        }
+
+        json_report_path = REPORTS_DIR / f"duplicates-{ts}.json"
+        html_report_path = REPORTS_DIR / f"duplicates-{ts}.html"
+        latest_json = REPORTS_DIR / "duplicates-latest.json"
+        latest_html = REPORTS_DIR / "duplicates-latest.html"
+
+        json_payload = json.dumps(report, indent=2, ensure_ascii=False)
+        html_payload = render_html(report)
+
+        json_report_path.write_text(json_payload, encoding="utf-8")
+        latest_json.write_text(json_payload, encoding="utf-8")
+        html_report_path.write_text(html_payload, encoding="utf-8")
+        latest_html.write_text(html_payload, encoding="utf-8")
+
+        if raw_czk_json.exists():
+            raw_czk_json.unlink()
+
+        print(
+            f"[OK] Informe generado en {json_report_path} y {html_report_path} "
+            f"(grupos={len(enriched)}, recuperable={human_bytes(reclaimable)})."
+        )
+
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: czkawka-duplicate-scanner
+  namespace: homelab-media
+  labels:
+    app: duplicate-scanner
+spec:
+  # Todos los domingos a las 04:00 hora del clúster
+  schedule: "0 4 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: duplicate-scanner
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: In
+                        values:
+                          - rpi-master
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+          containers:
+            - name: czkawka-scanner
+              image: python:3.11-slim
+              imagePullPolicy: IfNotPresent
+              command: ["python3", "/scripts/run_scan.py"]
+              env:
+                - name: TZ
+                  value: Europe/Madrid
+                - name: MIN_FILE_SIZE_BYTES
+                  value: "1048576"
+              volumeMounts:
+                # REGLA CRÍTICA DE NO-BORRADO: /media montado en SOLO LECTURA
+                - name: storage
+                  mountPath: /media
+                  subPath: media
+                  readOnly: true
+                - name: storage
+                  mountPath: /reports
+                  subPath: appdata/reports
+                - name: storage
+                  mountPath: /tools
+                  subPath: appdata/czkawka
+                - name: scanner-script
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+          volumes:
+            - name: storage
+              persistentVolumeClaim:
+                claimName: homelab-storage-pvc
+            - name: scanner-script
+              configMap:
+                name: duplicate-scanner-script
+                defaultMode: 0555

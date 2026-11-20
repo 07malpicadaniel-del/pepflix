@@ -1,0 +1,17 @@
+# Variables de entorno locales y secretos
+.env
+*.secret.yaml
+
+# Datos de ejecución local (Docker Compose staging en PC, bases SQLite, API keys y multimedia)
+local-storage/
+
+# Artefactos temporales de construcción OCI (.tar)
+.build-images/
+
+# Python / Sistema / Editores
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+*.log
+.DS_Store

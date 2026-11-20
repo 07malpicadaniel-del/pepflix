@@ -1,0 +1,158 @@
+# ==============================================================================
+# Módulo 1 — Ingress Controller (Traefik en K3s) para subdominios *.media.local
+# Configura tu DNS local (Pi-hole / AdGuard Home / /etc/hosts) apuntando
+# *.media.local a la IP de rpi-master.
+# ==============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: homelab-media-ingress
+  namespace: homelab-media
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  ingressClassName: traefik
+  rules:
+    # Módulo 1: Portal Centralizado (Homepage)
+    - host: media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homepage
+                port:
+                  number: 3000
+    - host: portal.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homepage
+                port:
+                  number: 3000
+
+    # Módulo 2: Servidor Multimedia Principal (Jellyfin)
+    - host: jellyfin.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jellyfin
+                port:
+                  number: 8096
+
+    # Módulo 3: Plataforma de Música (Navidrome)
+    - host: music.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: navidrome
+                port:
+                  number: 4533
+
+    # Módulo 4: Proxy Live TV / FAST Gratuito (Threadfin)
+    - host: tv.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: threadfin
+                port:
+                  number: 34400
+
+    # Módulo 5: Reproductor Multimedia Universal Web (PWA Local-First)
+    - host: player.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: universal-player
+                port:
+                  number: 8085
+
+    # Módulo 6: Centro de Documentales y Contenido Educativo
+    - host: edu.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: edu-catalog
+                port:
+                  number: 8000
+
+    # Módulo 7: Stack de Automatización (*arr + qBittorrent)
+    - host: prowlarr.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prowlarr
+                port:
+                  number: 9696
+    - host: sonarr.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sonarr
+                port:
+                  number: 8989
+    - host: radarr.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: radarr
+                port:
+                  number: 7878
+    - host: lidarr.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lidarr
+                port:
+                  number: 8686
+    - host: bazarr.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: bazarr
+                port:
+                  number: 6767
+    - host: downloads.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: qbittorrent
+                port:
+                  number: 8080

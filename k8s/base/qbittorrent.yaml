@@ -1,0 +1,119 @@
+# ==============================================================================
+# Módulo 7 — Cliente de Descargas (qBittorrent ARM64)
+# - Volumen único `/data` apuntando a `/mnt/storage` (SIN subPath) para permitir
+#   hardlinks atómicos con Sonarr, Radarr y Lidarr.
+# - Configura en WebUI -> Opciones -> Descargas:
+#     * Ruta de guardado por defecto: /data/torrents
+#     * Mantener incompletos en:      /data/torrents/incomplete
+#     * Categorías: movies -> /data/torrents/movies, tv -> /data/torrents/tv,
+#                   music -> /data/torrents/music, documentaries -> /data/torrents/documentaries
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qbittorrent
+  namespace: homelab-media
+  labels:
+    app: qbittorrent
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: qbittorrent
+  template:
+    metadata:
+      labels:
+        app: qbittorrent
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-master
+      containers:
+        - name: qbittorrent
+          image: lscr.io/linuxserver/qbittorrent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: webui
+              containerPort: 8080
+              protocol: TCP
+            - name: bt-tcp
+              containerPort: 6881
+              protocol: TCP
+            - name: bt-udp
+              containerPort: 6881
+              protocol: UDP
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: Europe/Madrid
+            - name: UMASK
+              value: "002"
+            - name: WEBUI_PORT
+              value: "8080"
+            - name: TORRENTING_PORT
+              value: "6881"
+          volumeMounts:
+            - name: storage
+              mountPath: /config
+              subPath: appdata/qbittorrent
+            # Montaje único raíz de /mnt/storage -> /data para hardlinks atómicos
+            - name: storage
+              mountPath: /data
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 25
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 75m
+              memory: 128Mi
+            limits:
+              cpu: 750m
+              memory: 448Mi
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: homelab-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qbittorrent
+  namespace: homelab-media
+  labels:
+    app: qbittorrent
+spec:
+  type: ClusterIP
+  selector:
+    app: qbittorrent
+  ports:
+    - name: webui
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: bt-tcp
+      port: 6881
+      targetPort: 6881
+      protocol: TCP
+    - name: bt-udp
+      port: 6881
+      targetPort: 6881
+      protocol: UDP

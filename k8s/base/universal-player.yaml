@@ -1,0 +1,83 @@
+# ==============================================================================
+# Módulo 5 — Reproductor Multimedia Universal Web (PWA Local-First)
+# Construido con `scripts/build-custom-apps.sh` (`podman build --platform linux/arm64`)
+# Servido por Nginx Alpine sin privilegios en el puerto 8085 (rpi-worker).
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: universal-player
+  namespace: homelab-media
+  labels:
+    app: universal-player
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: universal-player
+  template:
+    metadata:
+      labels:
+        app: universal-player
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+      containers:
+        - name: universal-player
+          image: localhost/homelab-universal-player:arm64
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8085
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8085
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8085
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 24Mi
+            limits:
+              cpu: 150m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: universal-player
+  namespace: homelab-media
+  labels:
+    app: universal-player
+spec:
+  type: ClusterIP
+  selector:
+    app: universal-player
+  ports:
+    - name: http
+      port: 8085
+      targetPort: 8085

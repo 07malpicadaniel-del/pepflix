@@ -1,0 +1,129 @@
+# ==============================================================================
+# Módulo 2 — Servidor Multimedia Principal (Jellyfin ARM64)
+# - Anclado obligatoriamente al nodo `rpi-worker` mediante nodeAffinity
+# - Acceso hardware V4L2 (/dev/video10, /dev/video11, /dev/video12) en RPi
+# - Biblioteca `/media` montada estrictamente en modo Read-Only (`readOnly: true`)
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyfin
+  namespace: homelab-media
+  labels:
+    app: jellyfin
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: jellyfin
+  template:
+    metadata:
+      labels:
+        app: jellyfin
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-worker
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        # GID 44 corresponde al grupo `video` en Raspberry Pi OS / Debian
+        supplementalGroups: [44]
+      containers:
+        - name: jellyfin
+          image: jellyfin/jellyfin:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            # Necesario en K3s sin device-plugin para permitir acceso cgroup a /dev/video10-12 (V4L2).
+            # La protección de no-borrado permanece garantizada a nivel VFS con `readOnly: true` en /media.
+            privileged: true
+          ports:
+            - name: http
+              containerPort: 8096
+              protocol: TCP
+          env:
+            - name: TZ
+              value: Europe/Madrid
+            - name: JELLYFIN_PublishedServerUrl
+              value: "http://jellyfin.media.local"
+          volumeMounts:
+            - name: storage
+              mountPath: /config
+              subPath: appdata/jellyfin/config
+            - name: storage
+              mountPath: /cache
+              subPath: appdata/jellyfin/cache
+            # REGLA CRÍTICA DE NO-BORRADO: biblioteca multimedia en SOLO LECTURA
+            - name: storage
+              mountPath: /media
+              subPath: media
+              readOnly: true
+            # Aceleración por hardware V4L2 en Raspberry Pi
+            - name: video10
+              mountPath: /dev/video10
+            - name: video11
+              mountPath: /dev/video11
+            - name: video12
+              mountPath: /dev/video12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8096
+            initialDelaySeconds: 35
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8096
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            limits:
+              cpu: 2000m
+              memory: 1536Mi
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: homelab-storage-pvc
+        - name: video10
+          hostPath:
+            path: /dev/video10
+            type: CharDevice
+        - name: video11
+          hostPath:
+            path: /dev/video11
+            type: CharDevice
+        - name: video12
+          hostPath:
+            path: /dev/video12
+            type: CharDevice
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jellyfin
+  namespace: homelab-media
+  labels:
+    app: jellyfin
+spec:
+  type: ClusterIP
+  selector:
+    app: jellyfin
+  ports:
+    - name: http
+      port: 8096
+      targetPort: 8096

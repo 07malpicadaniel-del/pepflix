@@ -1,0 +1,154 @@
+# ==============================================================================
+# Módulo 3 — Plataforma de Música Gratuita y Local (Navidrome ARM64)
+# - Conectado a /mnt/storage/media/music en modo SOLO LECTURA (`readOnly: true`)
+# - Auto-importación de playlists M3U (radios libres y podcasts abiertos)
+# - Ejecutado preferentemente en rpi-worker
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: navidrome-free-playlists
+  namespace: homelab-media
+data:
+  radios-libres.m3u: |
+    #EXTM3U
+    #EXTINF:-1,SomaFM - Groove Salad (Ambient / Downtempo)
+    https://ice1.somafm.com/groovesalad-128-mp3
+    #EXTINF:-1,SomaFM - Drone Zone (Concentración / Ambiental)
+    https://ice1.somafm.com/dronezone-128-mp3
+    #EXTINF:-1,SomaFM - DEF CON Radio (Electrónica)
+    https://ice1.somafm.com/defcon-128-mp3
+    #EXTINF:-1,SomaFM - Space Station Soma
+    https://ice1.somafm.com/spacestation-128-mp3
+    #EXTINF:-1,Radio Paradise - Main Mix (Independiente)
+    https://stream.radioparadise.com/aac-128
+    #EXTINF:-1,Radio Paradise - Mellow Mix
+    https://stream.radioparadise.com/mellow-128
+    #EXTINF:-1,Nightride FM - Synthwave
+    https://stream.nightride.fm/nightride.m4a
+  radios-ciencia-cultura.m3u: |
+    #EXTM3U
+    #EXTINF:-1,RNE Radio 3 (Música y Cultura — RTVE)
+    https://rtvelivestream.akamaized.net/rtvesec/rne/rne_r3_main.m3u8
+    #EXTINF:-1,RNE Radio Clásica (RTVE)
+    https://rtvelivestream.akamaized.net/rtvesec/rne/rne_r2_main.m3u8
+    #EXTINF:-1,FIP Radio (Radio France — Ecléctica)
+    https://icecast.radiofrance.fr/fip-midfi.mp3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: navidrome
+  namespace: homelab-media
+  labels:
+    app: navidrome
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: navidrome
+  template:
+    metadata:
+      labels:
+        app: navidrome
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-worker
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: navidrome
+          image: deluan/navidrome:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4533
+          env:
+            - name: TZ
+              value: Europe/Madrid
+            - name: ND_MUSICFOLDER
+              value: /music
+            - name: ND_DATAFOLDER
+              value: /data
+            # Relativo a ND_MUSICFOLDER: escanea /music/playlists (.m3u de radios libres y podcasts)
+            - name: ND_PLAYLISTSPATH
+              value: "playlists"
+            - name: ND_AUTOIMPORTPLAYLISTS
+              value: "true"
+            - name: ND_SCANSCHEDULE
+              value: "@every 1h"
+            - name: ND_LOGLEVEL
+              value: "info"
+            - name: ND_SESSIONTIMEOUT
+              value: "24h"
+            - name: ND_ENABLEDOWNLOADS
+              value: "true"
+            - name: ND_ENABLEINSIGHTSCOLLECTOR
+              value: "false"
+          volumeMounts:
+            - name: storage
+              mountPath: /data
+              subPath: appdata/navidrome
+            # REGLA CRÍTICA DE NO-BORRADO: biblioteca de música en SOLO LECTURA
+            - name: storage
+              mountPath: /music
+              subPath: media/music
+              readOnly: true
+            # Plantillas M3U de referencia (radios libres / cultura) montadas fuera del árbol ro
+            - name: free-playlists
+              mountPath: /etc/navidrome/sample-playlists
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 4533
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 4533
+            initialDelaySeconds: 8
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 40m
+              memory: 48Mi
+            limits:
+              cpu: 400m
+              memory: 128Mi
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: homelab-storage-pvc
+        - name: free-playlists
+          configMap:
+            name: navidrome-free-playlists
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: navidrome
+  namespace: homelab-media
+  labels:
+    app: navidrome
+spec:
+  type: ClusterIP
+  selector:
+    app: navidrome
+  ports:
+    - name: http
+      port: 4533
+      targetPort: 4533

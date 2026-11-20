@@ -1,0 +1,35 @@
+# ==============================================================================
+# Módulo 6 — Centro de Documentales y Contenido Educativo
+# FastAPI + SQLite sobre python:3.11-slim (multi-arquitectura linux/arm64)
+# ==============================================================================
+FROM python:3.11-slim
+
+LABEL org.opencontainers.image.title="Homelab Edu & Documentary Catalog" \
+      org.opencontainers.image.description="Catálogo autohospedado de documentales y recursos educativos gratuitos y legales" \
+      org.opencontainers.image.licenses="MIT"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    EDU_DB_PATH=/data/edu_catalog.db \
+    EDU_SEED_PATH=/app/seed_data.json
+
+WORKDIR /app
+
+# Crear usuario/grupo 1000:1000 compatible con permisos NFS del homelab
+RUN groupadd -g 1000 appuser && \
+    useradd -u 1000 -g 1000 -m -s /bin/sh appuser && \
+    mkdir -p /data && chown -R 1000:1000 /app /data
+
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY --chown=1000:1000 main.py seed_data.json /app/
+COPY --chown=1000:1000 static /app/static
+
+USER 1000:1000
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=4s --start-period=8s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)" || exit 1
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

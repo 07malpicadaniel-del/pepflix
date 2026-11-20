@@ -1,0 +1,177 @@
+# ==============================================================================
+# Despliegue Temporal en PC Local (Arch Linux x86_64 + Docker Compose)
+# Pensado para usar el ecosistema YA MISMO en tu PC mientras llegan los
+# ventiladores de las 2 Raspberry Pi 4 (4 GB RAM).
+#
+# - Mantiene los mismos límites de RAM calibrados para RPi 4 (4 GB) para validar
+#   el consumo real de memoria antes de migrar a las Raspberry Pi.
+# - Respeta tus contenedores ya activos en el host:
+#     prowlarr (:9696), radarr (:7878), sonarr (:8989), qbittorrent (:8080),
+#     jellyseerr (:5055) — integrándolos automáticamente en el Portal Homepage.
+# - Regla de No-Borrado aplicada: Jellyfin y Navidrome montan media en Solo Lectura (:ro).
+# ==============================================================================
+services:
+  # --- Módulo 1: Portal Centralizado (Homepage) ---
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homelab-homepage
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      TZ: America/Mexico_City
+      PUID: "1000"
+      PGID: "1000"
+      HOMEPAGE_ALLOWED_HOSTS: "localhost:3000,127.0.0.1:3000,192.168.100.46:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./local-storage/appdata/homepage:/app/config
+    mem_limit: 256m
+    cpus: 0.50
+
+  # --- Módulo 2: Servidor Multimedia Principal (Jellyfin — Media Solo Lectura) ---
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: homelab-jellyfin
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "8096:8096"
+    environment:
+      TZ: America/Mexico_City
+      JELLYFIN_PublishedServerUrl: http://localhost:8096
+    volumes:
+      - ./local-storage/appdata/jellyfin/config:/config
+      - ./local-storage/appdata/jellyfin/cache:/cache
+      - ./local-storage/media:/media:ro
+      - /srv/nfs/media:/media-nas:ro
+    networks:
+      - default
+      - media-stack_default
+    mem_limit: 1536m
+    cpus: 2.00
+
+  # --- Módulo 3: Música y Radios Libres M3U (Navidrome — Solo Lectura) ---
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: homelab-navidrome
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "4533:4533"
+    environment:
+      TZ: America/Mexico_City
+      ND_MUSICFOLDER: /music
+      ND_DATAFOLDER: /data
+      ND_PLAYLISTSPATH: playlists
+      ND_AUTOIMPORTPLAYLISTS: "true"
+      ND_SCANSCHEDULE: "@every 1h"
+      ND_LOGLEVEL: info
+      ND_ENABLEINSIGHTSCOLLECTOR: "false"
+    volumes:
+      - ./local-storage/appdata/navidrome:/data
+      - ./local-storage/media/music:/music:ro
+    mem_limit: 192m
+    cpus: 0.40
+
+  # --- Módulo 4: TV Gratuita / FAST Proxy (Threadfin) ---
+  threadfin:
+    image: fyb3roptik/threadfin:latest
+    container_name: homelab-threadfin
+    restart: unless-stopped
+    ports:
+      - "34400:34400"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: America/Mexico_City
+    volumes:
+      - ./local-storage/appdata/threadfin/conf:/home/threadfin/conf
+      - threadfin-tmp:/tmp/threadfin
+    mem_limit: 160m
+    cpus: 0.40
+
+  # --- Módulo 5: Reproductor Multimedia Universal Web (PWA Local-First) ---
+  universal-player:
+    build:
+      context: ./apps/universal-player
+      dockerfile: Containerfile
+    image: localhost/homelab-universal-player:local
+    container_name: homelab-universal-player
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    mem_limit: 64m
+    cpus: 0.25
+
+  # --- Módulo 6: Centro de Documentales y Contenido Educativo (FastAPI + SQLite) ---
+  edu-catalog:
+    build:
+      context: ./apps/edu-catalog
+      dockerfile: Containerfile
+    image: localhost/homelab-edu-catalog:local
+    container_name: homelab-edu-catalog
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "8000:8000"
+    environment:
+      TZ: America/Mexico_City
+      EDU_DB_PATH: /data/edu_catalog.db
+    volumes:
+      - ./local-storage/appdata/edu-catalog:/data
+    mem_limit: 192m
+    cpus: 0.35
+
+  # --- Módulo 7 (Complemento): Lidarr (Música + MusicBrainz) ---
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: homelab-lidarr
+    restart: unless-stopped
+    ports:
+      - "8686:8686"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: America/Mexico_City
+      UMASK: "002"
+    volumes:
+      - ./local-storage/appdata/lidarr:/config
+      - ./local-storage:/data
+    networks:
+      - default
+      - media-stack_default
+    mem_limit: 320m
+    cpus: 0.60
+
+  # --- Módulo 7 (Complemento): Bazarr (Subtítulos Automáticos) ---
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: homelab-bazarr
+    restart: unless-stopped
+    ports:
+      - "6767:6767"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: America/Mexico_City
+      UMASK: "002"
+    volumes:
+      - ./local-storage/appdata/bazarr:/config
+      - ./local-storage:/data
+      - /srv/nfs/media:/media-nas
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - media-stack_default
+    mem_limit: 320m
+    cpus: 0.40
+
+volumes:
+  threadfin-tmp:
+
+networks:
+  media-stack_default:
+    external: true

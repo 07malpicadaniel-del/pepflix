@@ -1,0 +1,378 @@
+# ==============================================================================
+# Módulo 1 — Portal Centralizado (Homepage ARM64 + Integración K3s RBAC)
+# Ejecutado preferentemente en rpi-master.
+# ==============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: homepage
+  namespace: homelab-media
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: homelab-homepage-reader
+rules:
+  - apiGroups: [""]
+    resources:
+      - namespaces
+      - pods
+      - nodes
+      - services
+    verbs:
+      - get
+      - list
+  - apiGroups: ["extensions", "networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs:
+      - get
+      - list
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - nodes
+      - pods
+    verbs:
+      - get
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: homelab-homepage-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: homelab-homepage-reader
+subjects:
+  - kind: ServiceAccount
+    name: homepage
+    namespace: homelab-media
+---
+# Secret con marcadores para activar widgets API (actualizar tras primer arranque)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: homepage-secrets
+  namespace: homelab-media
+type: Opaque
+stringData:
+  HOMEPAGE_VAR_JELLYFIN_API_KEY: "REPLACE_WITH_JELLYFIN_API_KEY"
+  HOMEPAGE_VAR_PROWLARR_API_KEY: "REPLACE_WITH_PROWLARR_API_KEY"
+  HOMEPAGE_VAR_SONARR_API_KEY: "REPLACE_WITH_SONARR_API_KEY"
+  HOMEPAGE_VAR_RADARR_API_KEY: "REPLACE_WITH_RADARR_API_KEY"
+  HOMEPAGE_VAR_LIDARR_API_KEY: "REPLACE_WITH_LIDARR_API_KEY"
+  HOMEPAGE_VAR_BAZARR_API_KEY: "REPLACE_WITH_BAZARR_API_KEY"
+  HOMEPAGE_VAR_QBIT_USER: "admin"
+  HOMEPAGE_VAR_QBIT_PASS: "REPLACE_WITH_QBIT_PASSWORD"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homepage-config
+  namespace: homelab-media
+data:
+  settings.yaml: |
+    title: Homelab Media Hub (2x Raspberry Pi)
+    description: Ecosistema Multimedia Centralizado ARM64 — K3s & Podman
+    theme: dark
+    color: slate
+    headerStyle: clean
+    statusStyle: dot
+    layout:
+      Streaming & Medios:
+        style: row
+        columns: 3
+      Apps Web & Educación:
+        style: row
+        columns: 2
+      Automatización (*arr & Descargas):
+        style: row
+        columns: 3
+
+  kubernetes.yaml: |
+    mode: cluster
+    ingress: true
+
+  widgets.yaml: |
+    - kubernetes:
+        cluster:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+          label: "Clúster RPi K3s"
+        nodes:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+    - search:
+        provider: duckduckgo
+        target: _blank
+    - datetime:
+        text_size: lg
+        format:
+          dateStyle: medium
+          timeStyle: short
+
+  services.yaml: |
+    - Streaming & Medios:
+        - Jellyfin:
+            icon: jellyfin.png
+            href: http://jellyfin.media.local
+            description: Cine, Series, Vídeos Personales y Live TV (rpi-worker)
+            namespace: homelab-media
+            app: jellyfin
+            widget:
+              type: jellyfin
+              url: http://jellyfin.homelab-media.svc.cluster.local:8096
+              key: "{{HOMEPAGE_VAR_JELLYFIN_API_KEY}}"
+              enableBlocks: true
+              enableNowPlaying: true
+
+        - Navidrome:
+            icon: navidrome.png
+            href: http://music.media.local
+            description: Música FLAC/MP3, Radios Libres M3U y Podcasts (Solo Lectura)
+            namespace: homelab-media
+            app: navidrome
+            siteMonitor: http://navidrome.homelab-media.svc.cluster.local:4533/ping
+
+        - Threadfin (FAST / Live TV):
+            icon: mdi-television-classic-#38bdf8
+            href: http://tv.media.local
+            description: Proxy M3U/EPG para Pluto TV, RTVE Play y TDTChannels
+            namespace: homelab-media
+            app: threadfin
+            siteMonitor: http://threadfin.homelab-media.svc.cluster.local:34400
+
+    - Apps Web & Educación:
+        - Universal Player PWA:
+            icon: mdi-play-circle-#818cf8
+            href: http://player.media.local
+            description: Reproductor local-first de vídeo/audio + subtítulos SRT/VTT
+            namespace: homelab-media
+            app: universal-player
+            siteMonitor: http://universal-player.homelab-media.svc.cluster.local:8085/healthz
+
+        - Centro Educativo & Documentales:
+            icon: wikipedia.png
+            href: http://edu.media.local
+            description: Catálogo legal (Internet Archive, NASA, MIT OCW, Wikimedia)
+            namespace: homelab-media
+            app: edu-catalog
+            widget:
+              type: customapi
+              url: http://edu-catalog.homelab-media.svc.cluster.local:8000/api/stats
+              mappings:
+                - field: total_items
+                  label: Recursos
+                - field: favorites
+                  label: Favoritos
+                - field: watched
+                  label: Vistos
+
+    - Automatización (*arr & Descargas):
+        - Prowlarr:
+            icon: prowlarr.png
+            href: http://prowlarr.media.local
+            description: Gestor centralizado de indexers y trackers abiertos/legales
+            namespace: homelab-media
+            app: prowlarr
+            widget:
+              type: prowlarr
+              url: http://prowlarr.homelab-media.svc.cluster.local:9696
+              key: "{{HOMEPAGE_VAR_PROWLARR_API_KEY}}"
+
+        - Radarr:
+            icon: radarr.png
+            href: http://radarr.media.local
+            description: Organización automática de películas con hardlinks
+            namespace: homelab-media
+            app: radarr
+            widget:
+              type: radarr
+              url: http://radarr.homelab-media.svc.cluster.local:7878
+              key: "{{HOMEPAGE_VAR_RADARR_API_KEY}}"
+
+        - Sonarr:
+            icon: sonarr.png
+            href: http://sonarr.media.local
+            description: Organización automática de series con hardlinks
+            namespace: homelab-media
+            app: sonarr
+            widget:
+              type: sonarr
+              url: http://sonarr.homelab-media.svc.cluster.local:8989
+              key: "{{HOMEPAGE_VAR_SONARR_API_KEY}}"
+
+        - Lidarr:
+            icon: lidarr.png
+            href: http://lidarr.media.local
+            description: Biblioteca musical y metadatos MusicBrainz
+            namespace: homelab-media
+            app: lidarr
+            widget:
+              type: lidarr
+              url: http://lidarr.homelab-media.svc.cluster.local:8686
+              key: "{{HOMEPAGE_VAR_LIDARR_API_KEY}}"
+
+        - Bazarr:
+            icon: bazarr.png
+            href: http://bazarr.media.local
+            description: Subtítulos automáticos en español e inglés
+            namespace: homelab-media
+            app: bazarr
+            widget:
+              type: bazarr
+              url: http://bazarr.homelab-media.svc.cluster.local:6767
+              key: "{{HOMEPAGE_VAR_BAZARR_API_KEY}}"
+
+        - qBittorrent:
+            icon: qbittorrent.png
+            href: http://downloads.media.local
+            description: Cliente de descargas en /data/torrents (sin duplicación)
+            namespace: homelab-media
+            app: qbittorrent
+            widget:
+              type: qbittorrent
+              url: http://qbittorrent.homelab-media.svc.cluster.local:8080
+              username: "{{HOMEPAGE_VAR_QBIT_USER}}"
+              password: "{{HOMEPAGE_VAR_QBIT_PASS}}"
+
+  bookmarks.yaml: |
+    - Fuentes Legales y Abiertas:
+        - Internet Archive:
+            - abbr: IA
+              href: https://archive.org/details/movies
+        - NASA+:
+            - abbr: NS
+              href: https://plus.nasa.gov/
+        - MIT OpenCourseWare:
+            - abbr: MIT
+              href: https://ocw.mit.edu/
+        - Wikimedia Commons:
+            - abbr: WC
+              href: https://commons.wikimedia.org/
+    - TV Gratuita (FAST) y Radios Libres:
+        - Pluto TV:
+            - abbr: PT
+              href: https://pluto.tv/
+        - RTVE Play:
+            - abbr: RT
+              href: https://www.rtve.es/play/
+        - TDTChannels:
+            - abbr: TDT
+              href: https://www.tdtchannels.com/
+        - Free Music Archive:
+            - abbr: FMA
+              href: https://freemusicarchive.org/
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homepage
+  namespace: homelab-media
+  labels:
+    app: homepage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: homepage
+  template:
+    metadata:
+      labels:
+        app: homepage
+    spec:
+      serviceAccountName: homepage
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-master
+      containers:
+        - name: homepage
+          image: ghcr.io/gethomepage/homepage:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: TZ
+              value: Europe/Madrid
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: HOMEPAGE_ALLOWED_HOSTS
+              value: "media.local,portal.media.local,localhost:3000,127.0.0.1:3000"
+          envFrom:
+            - secretRef:
+                name: homepage-secrets
+                optional: true
+          volumeMounts:
+            - name: homepage-config
+              mountPath: /app/config/settings.yaml
+              subPath: settings.yaml
+            - name: homepage-config
+              mountPath: /app/config/widgets.yaml
+              subPath: widgets.yaml
+            - name: homepage-config
+              mountPath: /app/config/services.yaml
+              subPath: services.yaml
+            - name: homepage-config
+              mountPath: /app/config/bookmarks.yaml
+              subPath: bookmarks.yaml
+            - name: homepage-config
+              mountPath: /app/config/kubernetes.yaml
+              subPath: kubernetes.yaml
+            - name: homepage-logs
+              mountPath: /app/config/logs
+          livenessProbe:
+            httpGet:
+              path: /api/healthcheck
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/healthcheck
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      volumes:
+        - name: homepage-config
+          configMap:
+            name: homepage-config
+        - name: homepage-logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: homepage
+  namespace: homelab-media
+  labels:
+    app: homepage
+spec:
+  type: ClusterIP
+  selector:
+    app: homepage
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

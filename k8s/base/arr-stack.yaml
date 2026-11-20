@@ -1,0 +1,485 @@
+# ==============================================================================
+# Módulo 7 — Stack de Automatización (*arr): Prowlarr, Radarr, Sonarr, Lidarr, Bazarr
+# - Imágenes oficiales `lscr.io/linuxserver/*:latest` verificadas para linux/arm64
+# - Volumen único `/data` apuntando a `/mnt/storage` (SIN subPath) para garantizar
+#   hardlinks atómicos entre `/data/torrents/*` y `/data/media/*` + `/data/recycle_bin/*`
+# - Ejecutado preferentemente en `rpi-master` (gestión e indexación)
+# - Uso exclusivo con contenido propio, dominio público, Creative Commons y fuentes legales
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. PROWLARR — Gestor Centralizado de Indexers y Trackers Abiertos/Legales
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prowlarr
+  namespace: homelab-media
+  labels:
+    app: prowlarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prowlarr
+  template:
+    metadata:
+      labels:
+        app: prowlarr
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-master
+      containers:
+        - name: prowlarr
+          image: lscr.io/linuxserver/prowlarr:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9696
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: Europe/Madrid
+            - name: UMASK
+              value: "002"
+          volumeMounts:
+            - name: storage
+              mountPath: /config
+              subPath: appdata/prowlarr
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 9696
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 9696
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 400m
+              memory: 256Mi
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: homelab-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prowlarr
+  namespace: homelab-media
+  labels:
+    app: prowlarr
+spec:
+  type: ClusterIP
+  selector:
+    app: prowlarr
+  ports:
+    - name: http
+      port: 9696
+      targetPort: 9696
+
+---
+# ------------------------------------------------------------------------------
+# 2. RADARR — Automatización de Películas y Documentales (Hardlinks + Recycle Bin)
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: radarr
+  namespace: homelab-media
+  labels:
+    app: radarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: radarr
+  template:
+    metadata:
+      labels:
+        app: radarr
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-master
+      containers:
+        - name: radarr
+          image: lscr.io/linuxserver/radarr:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 7878
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: Europe/Madrid
+            - name: UMASK
+              value: "002"
+          volumeMounts:
+            - name: storage
+              mountPath: /config
+              subPath: appdata/radarr
+            # Montaje raíz único de /mnt/storage -> /data para hardlinks atómicos
+            # Rutas internas: /data/torrents/movies -> /data/media/movies | Papelera: /data/recycle_bin/movies
+            - name: storage
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 7878
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 7878
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 75m
+              memory: 128Mi
+            limits:
+              cpu: 600m
+              memory: 320Mi
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: homelab-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: radarr
+  namespace: homelab-media
+  labels:
+    app: radarr
+spec:
+  type: ClusterIP
+  selector:
+    app: radarr
+  ports:
+    - name: http
+      port: 7878
+      targetPort: 7878
+
+---
+# ------------------------------------------------------------------------------
+# 3. SONARR — Automatización de Series y Documentales Episódicos (Hardlinks)
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonarr
+  namespace: homelab-media
+  labels:
+    app: sonarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sonarr
+  template:
+    metadata:
+      labels:
+        app: sonarr
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-master
+      containers:
+        - name: sonarr
+          image: lscr.io/linuxserver/sonarr:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8989
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: Europe/Madrid
+            - name: UMASK
+              value: "002"
+          volumeMounts:
+            - name: storage
+              mountPath: /config
+              subPath: appdata/sonarr
+            # Rutas internas: /data/torrents/tv -> /data/media/tv | Papelera: /data/recycle_bin/tv
+            - name: storage
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 8989
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8989
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 75m
+              memory: 128Mi
+            limits:
+              cpu: 600m
+              memory: 320Mi
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: homelab-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sonarr
+  namespace: homelab-media
+  labels:
+    app: sonarr
+spec:
+  type: ClusterIP
+  selector:
+    app: sonarr
+  ports:
+    - name: http
+      port: 8989
+      targetPort: 8989
+
+---
+# ------------------------------------------------------------------------------
+# 4. LIDARR — Automatización de Música y Metadatos MusicBrainz (Hardlinks)
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lidarr
+  namespace: homelab-media
+  labels:
+    app: lidarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: lidarr
+  template:
+    metadata:
+      labels:
+        app: lidarr
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-master
+      containers:
+        - name: lidarr
+          image: lscr.io/linuxserver/lidarr:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8686
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: Europe/Madrid
+            - name: UMASK
+              value: "002"
+          volumeMounts:
+            - name: storage
+              mountPath: /config
+              subPath: appdata/lidarr
+            # Rutas internas: /data/torrents/music -> /data/media/music | Papelera: /data/recycle_bin/music
+            - name: storage
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 8686
+            initialDelaySeconds: 35
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8686
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 75m
+              memory: 128Mi
+            limits:
+              cpu: 600m
+              memory: 320Mi
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: homelab-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lidarr
+  namespace: homelab-media
+  labels:
+    app: lidarr
+spec:
+  type: ClusterIP
+  selector:
+    app: lidarr
+  ports:
+    - name: http
+      port: 8686
+      targetPort: 8686
+
+---
+# ------------------------------------------------------------------------------
+# 5. BAZARR — Descarga Automática de Subtítulos (Español / Inglés)
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bazarr
+  namespace: homelab-media
+  labels:
+    app: bazarr
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bazarr
+  template:
+    metadata:
+      labels:
+        app: bazarr
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-master
+      containers:
+        - name: bazarr
+          image: lscr.io/linuxserver/bazarr:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 6767
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: Europe/Madrid
+            - name: UMASK
+              value: "002"
+          volumeMounts:
+            - name: storage
+              mountPath: /config
+              subPath: appdata/bazarr
+            # Mismo punto de montaje `/data` que Sonarr y Radarr para coincidencia exacta de rutas
+            - name: storage
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 6767
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 6767
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 50m
+              memory: 160Mi
+            limits:
+              cpu: 400m
+              memory: 320Mi
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: homelab-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bazarr
+  namespace: homelab-media
+  labels:
+    app: bazarr
+spec:
+  type: ClusterIP
+  selector:
+    app: bazarr
+  ports:
+    - name: http
+      port: 6767
+      targetPort: 6767

@@ -1,0 +1,51 @@
+# ==============================================================================
+# Almacenamiento Compartido TRaSH Guides (/mnt/storage vía NFS en ambos nodos)
+# Política Retain: garantiza que eliminar un PVC jamás borre datos en disco.
+# Un único PV/PVC raíz en /mnt/storage permite hardlinks atómicos entre
+# /data/torrents y /data/media dentro de *arr y qBittorrent sin duplicar espacio.
+# ==============================================================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: manual-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: Immediate
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: homelab-storage-pv
+  labels:
+    type: nfs-shared-storage
+    app.kubernetes.io/part-of: homelab-media-stack
+spec:
+  storageClassName: manual-storage
+  capacity:
+    storage: 2Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  # Ambos nodos (rpi-master y rpi-worker) montan el mismo recurso NFS en /mnt/storage
+  # mediante scripts/setup-nodes.sh. Compatible con K3s y `podman play kube`.
+  hostPath:
+    path: /mnt/storage
+    type: Directory
+  # Alternativa NFS nativa de Kubernetes (descomentar si no montas /mnt/storage en fstab):
+  # nfs:
+  #   server: 192.168.1.50
+  #   path: /mnt/storage
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: homelab-storage-pvc
+  namespace: homelab-media
+spec:
+  storageClassName: manual-storage
+  volumeName: homelab-storage-pv
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 2Ti

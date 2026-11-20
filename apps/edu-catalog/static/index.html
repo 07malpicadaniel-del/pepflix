@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Centro Educativo y Documentales — Homelab Media</title>
+  <style>
+    :root {
+      --bg: #0b101b;
+      --surface: #121a2b;
+      --elevated: #1a253b;
+      --hover: #23314d;
+      --border: rgba(148, 163, 184, 0.18);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-strong: #0284c7;
+      --gold: #f59e0b;
+      --green: #22c55e;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px 22px 48px;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 22px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo {
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #0284c7, #6366f1);
+      display: grid;
+      place-items: center;
+      font-size: 1.4rem;
+      box-shadow: 0 6px 20px rgba(2, 132, 199, 0.35);
+    }
+
+    .brand h1 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .brand p {
+      font-size: 0.84rem;
+      color: var(--muted);
+    }
+
+    .stats-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .stat-pill {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .stat-pill strong {
+      color: var(--text);
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      background: var(--elevated);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn:hover { background: var(--hover); }
+    .btn-primary {
+      background: var(--accent-strong);
+      border-color: var(--accent-strong);
+      color: #fff;
+    }
+    .btn-primary:hover { background: #0369a1; }
+
+    /* Navegación de vistas */
+    .view-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .view-tab {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 9px 16px;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .view-tab.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--accent);
+      color: #e0f2fe;
+    }
+
+    /* Panel de filtros */
+    .filters-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: grid;
+      grid-template-columns: minmax(220px, 1.8fr) repeat(5, minmax(130px, 1fr)) auto;
+      gap: 10px;
+      margin-bottom: 22px;
+      align-items: end;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .field label {
+      font-size: 0.74rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 600;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      background: var(--elevated);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 0.86rem;
+      font-family: inherit;
+    }
+
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .results-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      gap: 10px;
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+
+    /* Grid de tarjetas */
+    .catalog-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(56, 189, 248, 0.45);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--elevated);
+      color: #bae6fd;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+
+    .badge-license {
+      background: rgba(34, 197, 94, 0.14);
+      border-color: rgba(34, 197, 94, 0.35);
+      color: #86efac;
+    }
+
+    .badge-lang {
+      background: rgba(99, 102, 241, 0.18);
+      border-color: rgba(99, 102, 241, 0.35);
+      color: #c7d2fe;
+      text-transform: uppercase;
+    }
+
+    .fav-btn {
+      background: var(--elevated);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1.05rem;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+
+    .fav-btn.active {
+      color: var(--gold);
+      border-color: rgba(245, 158, 11, 0.55);
+      background: rgba(245, 158, 11, 0.14);
+    }
+
+    .card h2 {
+      font-size: 1.02rem;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .card-desc {
+      font-size: 0.86rem;
+      color: var(--muted);
+      flex: 1;
+    }
+
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      padding-top: 4px;
+    }
+
+    .tags-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .tag {
+      font-size: 0.7rem;
+      color: var(--muted);
+      background: rgba(148, 163, 184, 0.1);
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .watched-btn {
+      font-size: 0.78rem;
+      padding: 6px 10px;
+    }
+
+    .watched-btn.is-watched {
+      background: rgba(34, 197, 94, 0.16);
+      border-color: rgba(34, 197, 94, 0.45);
+      color: #86efac;
+    }
+
+    .empty-msg {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 48px 20px;
+      background: var(--surface);
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      color: var(--muted);
+    }
+
+    /* Modal para añadir recurso legal */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      z-index: 40;
+    }
+
+    .modal.hidden { display: none; }
+
+    .modal-card {
+      width: min(620px, 100%);
+      max-height: 90vh;
+      overflow-y: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .form-grid .full {
+      grid-column: 1 / -1;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .legal-banner {
+      margin-top: 28px;
+      padding: 14px 18px;
+      border-radius: var(--radius);
+      background: rgba(34, 197, 94, 0.08);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      font-size: 0.82rem;
+      color: #bbf7d0;
+    }
+
+    @media (max-width: 1100px) {
+      .filters-panel {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+
+    @media (max-width: 680px) {
+      .filters-panel {
+        grid-template-columns: 1fr;
+      }
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="logo" aria-hidden="true">🎓</div>
+        <div>
+          <h1>Centro de Documentales y Educación Abierta</h1>
+          <p>Catálogo legal y gratuito: Internet Archive · NASA · MIT OCW · Wikimedia Commons · Dominio Público</p>
+        </div>
+      </div>
+
+      <div class="stats-bar">
+        <span class="stat-pill">Recursos: <strong id="statTotal">0</strong></span>
+        <span class="stat-pill">★ Favoritos: <strong id="statFav">0</strong></span>
+        <span class="stat-pill">✓ Vistos: <strong id="statWatched">0</strong></span>
+        <button id="btnOpenAdd" class="btn btn-primary" type="button">+ Añadir recurso legal</button>
+      </div>
+    </header>
+
+    <div class="view-tabs" role="tablist">
+      <button id="tabAll" class="view-tab active" type="button">📚 Catálogo completo</button>
+      <button id="tabFavorites" class="view-tab" type="button">★ Mis Favoritos</button>
+      <button id="tabWatched" class="view-tab" type="button">✓ Marcados como vistos</button>
+    </div>
+
+    <section class="filters-panel" aria-label="Filtros del catálogo">
+      <div class="field">
+        <label for="fQuery">Buscar</label>
+        <input id="fQuery" type="search" placeholder="Título, tema, fuente o etiqueta..." />
+      </div>
+      <div class="field">
+        <label for="fCategory">Categoría</label>
+        <select id="fCategory"><option value="">Todas</option></select>
+      </div>
+      <div class="field">
+        <label for="fTheme">Temática</label>
+        <select id="fTheme"><option value="">Todas</option></select>
+      </div>
+      <div class="field">
+        <label for="fDuration">Duración</label>
+        <select id="fDuration">
+          <option value="">Cualquiera</option>
+          <option value="short">Corto (&lt; 30 min)</option>
+          <option value="medium">Medio (30 - 90 min)</option>
+          <option value="long">Largo / Curso (&gt; 90 min)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="fLanguage">Idioma</label>
+        <select id="fLanguage">
+          <option value="">Todos</option>
+          <option value="es">Español</option>
+          <option value="en">Inglés</option>
+          <option value="multilingual">Sin diálogo / Multi</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="fSource">Fuente</label>
+        <select id="fSource"><option value="">Todas</option></select>
+      </div>
+      <button id="btnResetFilters" class="btn" type="button">Limpiar</button>
+    </section>
+
+    <div class="results-meta">
+      <span id="resultsCount">Cargando catálogo...</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <label for="fSort" style="font-size:0.8rem;">Ordenar:</label>
+        <select id="fSort" style="background:var(--elevated);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:5px 9px;font-size:0.82rem;">
+          <option value="title">Alfabético (A-Z)</option>
+          <option value="year_desc">Año (más reciente)</option>
+          <option value="duration_asc">Duración (menor a mayor)</option>
+          <option value="duration_desc">Duración (mayor a menor)</option>
+          <option value="recent">Añadidos recientemente</option>
+        </select>
+      </div>
+    </div>
+
+    <main id="catalogGrid" class="catalog-grid"></main>
+
+    <footer class="legal-banner">
+      <strong>Política de Contenido Abierto y Legal:</strong> Todos los recursos listados enlazan directamente a sus repositorios oficiales (Dominio Público, Creative Commons, NASA, ESA, ESO, MIT OpenCourseWare, Wikimedia Commons e Internet Archive). Tus favoritos y progreso se almacenan de forma persistente en SQLite dentro de tu clúster Raspberry Pi.
+    </footer>
+  </div>
+
+  <!-- Modal para añadir recurso educativo -->
+  <div id="addModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="addModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="addModalTitle">Añadir recurso educativo o documental legal</h2>
+        <button id="btnCloseAdd" class="btn" type="button">✕</button>
+      </div>
+      <form id="addForm">
+        <div class="form-grid">
+          <div class="field full">
+            <label for="inTitle">Título *</label>
+            <input id="inTitle" required minlength="3" placeholder="Ej. Curso abierto de Astronomía Observacional" />
+          </div>
+          <div class="field full">
+            <label for="inDesc">Descripción *</label>
+            <textarea id="inDesc" rows="3" required minlength="10" placeholder="Resumen del contenido y valor educativo..."></textarea>
+          </div>
+          <div class="field">
+            <label for="inCategory">Categoría *</label>
+            <select id="inCategory">
+              <option>Documental</option>
+              <option>Curso Universitario</option>
+              <option>Conferencia</option>
+              <option>Ciencia y Naturaleza</option>
+              <option>Cine Dominio Público</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="inTheme">Temática *</label>
+            <input id="inTheme" required placeholder="Ej. Espacio y Astronomía" />
+          </div>
+          <div class="field">
+            <label for="inLanguage">Idioma *</label>
+            <select id="inLanguage">
+              <option value="es">Español</option>
+              <option value="en">Inglés</option>
+              <option value="multilingual">Multilingüe / Sin diálogo</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="inDuration">Duración (minutos) *</label>
+            <input id="inDuration" type="number" min="1" value="45" required />
+          </div>
+          <div class="field">
+            <label for="inSource">Fuente oficial *</label>
+            <input id="inSource" required placeholder="Ej. Internet Archive, NASA, MIT OCW..." />
+          </div>
+          <div class="field">
+            <label for="inLicense">Licencia *</label>
+            <input id="inLicense" required value="CC BY 4.0" placeholder="Public Domain, CC BY 4.0..." />
+          </div>
+          <div class="field">
+            <label for="inYear">Año</label>
+            <input id="inYear" type="number" min="1890" max="2100" value="2024" />
+          </div>
+          <div class="field">
+            <label for="inTags">Etiquetas (separadas por coma)</label>
+            <input id="inTags" placeholder="ciencia, divulgación, abierto" />
+          </div>
+          <div class="field full">
+            <label for="inUrl">URL directa a la fuente original *</label>
+            <input id="inUrl" type="url" required placeholder="https://archive.org/details/..." />
+          </div>
+        </div>
+        <p id="formError" style="color:#fca5a5;font-size:0.82rem;margin-top:10px;"></p>
+        <div class="modal-actions">
+          <button id="btnCancelAdd" class="btn" type="button">Cancelar</button>
+          <button class="btn btn-primary" type="submit">Guardar en catálogo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const state = {
+        view: 'all', // 'all' | 'favorites' | 'watched'
+        items: []
+      };
+
+      const els = {
+        grid: document.getElementById('catalogGrid'),
+        resultsCount: document.getElementById('resultsCount'),
+        statTotal: document.getElementById('statTotal'),
+        statFav: document.getElementById('statFav'),
+        statWatched: document.getElementById('statWatched'),
+        tabAll: document.getElementById('tabAll'),
+        tabFavorites: document.getElementById('tabFavorites'),
+        tabWatched: document.getElementById('tabWatched'),
+        fQuery: document.getElementById('fQuery'),
+        fCategory: document.getElementById('fCategory'),
+        fTheme: document.getElementById('fTheme'),
+        fDuration: document.getElementById('fDuration'),
+        fLanguage: document.getElementById('fLanguage'),
+        fSource: document.getElementById('fSource'),
+        fSort: document.getElementById('fSort'),
+        btnResetFilters: document.getElementById('btnResetFilters'),
+        addModal: document.getElementById('addModal'),
+        btnOpenAdd: document.getElementById('btnOpenAdd'),
+        btnCloseAdd: document.getElementById('btnCloseAdd'),
+        btnCancelAdd: document.getElementById('btnCancelAdd'),
+        addForm: document.getElementById('addForm'),
+        formError: document.getElementById('formError')
+      };
+
+      function formatDuration(mins) {
+        if (mins >= 60) {
+          const h = Math.floor(mins / 60);
+          const m = mins % 60;
+          return m ? `${h}h ${m}m` : `${h}h`;
+        }
+        return `${mins} min`;
+      }
+
+      function langLabel(code) {
+        const map = { es: 'ES', en: 'EN', multilingual: 'MULTI' };
+        return map[code] || code.toUpperCase();
+      }
+
+      async function loadStats() {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        els.statTotal.textContent = data.total_items;
+        els.statFav.textContent = data.favorites;
+        els.statWatched.textContent = data.watched;
+      }
+
+      async function loadFacets() {
+        const res = await fetch('/api/facets');
+        const data = await res.json();
+        const fillSelect = (select, values) => {
+          const current = select.value;
+          select.innerHTML = '<option value="">Todas</option>';
+          values.forEach((v) => {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            select.appendChild(opt);
+          });
+          select.value = current;
+        };
+        fillSelect(els.fCategory, data.categories);
+        fillSelect(els.fTheme, data.themes);
+        fillSelect(els.fSource, data.sources);
+      }
+
+      async function fetchCatalog() {
+        const params = new URLSearchParams();
+        if (els.fQuery.value.trim()) params.set('q', els.fQuery.value.trim());
+        if (els.fCategory.value) params.set('category', els.fCategory.value);
+        if (els.fTheme.value) params.set('theme', els.fTheme.value);
+        if (els.fDuration.value) params.set('duration_bucket', els.fDuration.value);
+        if (els.fLanguage.value) params.set('language', els.fLanguage.value);
+        if (els.fSource.value) params.set('source', els.fSource.value);
+        params.set('sort', els.fSort.value);
+
+        if (state.view === 'favorites') params.set('favorites_only', 'true');
+        if (state.view === 'watched') params.set('watched_only', 'true');
+
+        const res = await fetch(`/api/items?${params.toString()}`);
+        const data = await res.json();
+        state.items = data.items || [];
+        renderCatalog();
+      }
+
+      function renderCatalog() {
+        els.resultsCount.textContent = `Mostrando ${state.items.length} recurso(s)`;
+        els.grid.innerHTML = '';
+
+        if (!state.items.length) {
+          const empty = document.createElement('div');
+          empty.className = 'empty-msg';
+          empty.textContent = state.view === 'favorites'
+            ? 'Aún no tienes favoritos guardados. Pulsa ★ en cualquier documental o curso para añadirlo.'
+            : 'No se encontraron recursos con los filtros actuales.';
+          els.grid.appendChild(empty);
+          return;
+        }
+
+        for (const item of state.items) {
+          const card = document.createElement('article');
+          card.className = 'card';
+
+          const header = document.createElement('div');
+          header.className = 'card-header';
+
+          const badges = document.createElement('div');
+          badges.className = 'badges';
+
+          const bCat = document.createElement('span');
+          bCat.className = 'badge';
+          bCat.textContent = item.category;
+
+          const bLang = document.createElement('span');
+          bLang.className = 'badge badge-lang';
+          bLang.textContent = langLabel(item.language);
+
+          const bLic = document.createElement('span');
+          bLic.className = 'badge badge-license';
+          bLic.textContent = item.license;
+
+          badges.append(bCat, bLang, bLic);
+
+          const favBtn = document.createElement('button');
+          favBtn.className = `fav-btn ${item.is_favorite ? 'active' : ''}`;
+          favBtn.type = 'button';
+          favBtn.title = item.is_favorite ? 'Quitar de favoritos' : 'Añadir a favoritos';
+          favBtn.textContent = item.is_favorite ? '★' : '☆';
+          favBtn.addEventListener('click', () => toggleFavorite(item));
+
+          header.append(badges, favBtn);
+
+          const title = document.createElement('h2');
+          title.textContent = item.title;
+
+          const desc = document.createElement('p');
+          desc.className = 'card-desc';
+          desc.textContent = item.description;
+
+          const meta = document.createElement('div');
+          meta.className = 'meta-row';
+          meta.innerHTML = '';
+          const parts = [
+            `🏛️ ${item.source}`,
+            `🧭 ${item.theme}`,
+            `⏱️ ${formatDuration(item.duration_minutes)}`
+          ];
+          if (item.year) parts.push(`📅 ${item.year}`);
+          parts.forEach((txt) => {
+            const s = document.createElement('span');
+            s.textContent = txt;
+            meta.appendChild(s);
+          });
+
+          const tagsRow = document.createElement('div');
+          tagsRow.className = 'tags-row';
+          (item.tags || []).forEach((t) => {
+            const span = document.createElement('span');
+            span.className = 'tag';
+            span.textContent = `#${t}`;
+            tagsRow.appendChild(span);
+          });
+
+          const footer = document.createElement('div');
+          footer.className = 'card-footer';
+
+          const watchedBtn = document.createElement('button');
+          watchedBtn.type = 'button';
+          watchedBtn.className = `btn watched-btn ${item.watched ? 'is-watched' : ''}`;
+          watchedBtn.textContent = item.watched ? '✓ Visto' : 'Marcar visto';
+          watchedBtn.addEventListener('click', () => toggleWatched(item));
+
+          const link = document.createElement('a');
+          link.className = 'btn btn-primary';
+          link.href = item.source_url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = 'Abrir fuente original ↗';
+
+          footer.append(watchedBtn, link);
+          card.append(header, title, desc, meta, tagsRow, footer);
+          els.grid.appendChild(card);
+        }
+      }
+
+      async function toggleFavorite(item) {
+        const method = item.is_favorite ? 'DELETE' : 'POST';
+        await fetch(`/api/favorites/${item.id}`, { method });
+        await Promise.all([loadStats(), fetchCatalog()]);
+      }
+
+      async function toggleWatched(item) {
+        await fetch(`/api/items/${item.id}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ watched: !item.watched })
+        });
+        await Promise.all([loadStats(), fetchCatalog()]);
+      }
+
+      function setView(view) {
+        state.view = view;
+        els.tabAll.classList.toggle('active', view === 'all');
+        els.tabFavorites.classList.toggle('active', view === 'favorites');
+        els.tabWatched.classList.toggle('active', view === 'watched');
+        fetchCatalog();
+      }
+
+      let searchTimer = null;
+      els.fQuery.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(fetchCatalog, 180);
+      });
+
+      [els.fCategory, els.fTheme, els.fDuration, els.fLanguage, els.fSource, els.fSort].forEach((el) =>
+        el.addEventListener('change', fetchCatalog)
+      );
+
+      els.btnResetFilters.addEventListener('click', () => {
+        els.fQuery.value = '';
+        els.fCategory.value = '';
+        els.fTheme.value = '';
+        els.fDuration.value = '';
+        els.fLanguage.value = '';
+        els.fSource.value = '';
+        els.fSort.value = 'title';
+        fetchCatalog();
+      });
+
+      els.tabAll.addEventListener('click', () => setView('all'));
+      els.tabFavorites.addEventListener('click', () => setView('favorites'));
+      els.tabWatched.addEventListener('click', () => setView('watched'));
+
+      const closeModal = () => {
+        els.addModal.classList.add('hidden');
+        els.formError.textContent = '';
+      };
+
+      els.btnOpenAdd.addEventListener('click', () => els.addModal.classList.remove('hidden'));
+      els.btnCloseAdd.addEventListener('click', closeModal);
+      els.btnCancelAdd.addEventListener('click', closeModal);
+      els.addModal.addEventListener('click', (e) => {
+        if (e.target === els.addModal) closeModal();
+      });
+
+      els.addForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        els.formError.textContent = '';
+        const payload = {
+          title: document.getElementById('inTitle').value.trim(),
+          description: document.getElementById('inDesc').value.trim(),
+          category: document.getElementById('inCategory').value,
+          theme: document.getElementById('inTheme').value.trim(),
+          language: document.getElementById('inLanguage').value,
+          duration_minutes: Number(document.getElementById('inDuration').value),
+          year: document.getElementById('inYear').value ? Number(document.getElementById('inYear').value) : null,
+          source: document.getElementById('inSource').value.trim(),
+          license: document.getElementById('inLicense').value.trim(),
+          source_url: document.getElementById('inUrl').value.trim(),
+          tags: document.getElementById('inTags').value.split(',').map((s) => s.trim()).filter(Boolean)
+        };
+
+        const res = await fetch('/api/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          els.formError.textContent = err.detail ? JSON.stringify(err.detail) : 'Error al guardar el recurso.';
+          return;
+        }
+
+        els.addForm.reset();
+        closeModal();
+        await Promise.all([loadFacets(), loadStats(), fetchCatalog()]);
+      });
+
+      Promise.all([loadFacets(), loadStats(), fetchCatalog()]);
+    })();
+  </script>
+</body>
+</html>

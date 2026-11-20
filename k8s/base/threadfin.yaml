@@ -1,0 +1,129 @@
+# ==============================================================================
+# Módulo 4 — Agregador de Plataformas Gratuitas y Legales (FAST / Live TV)
+# Threadfin (proxy M3U/XMLTV en Go, ARM64) listo para alimentar Jellyfin Live TV
+# con listas legales: Pluto TV, RTVE Play y TDTChannels.
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: threadfin-legal-sources
+  namespace: homelab-media
+data:
+  legal-fast-sources.txt: |
+    # ==========================================================================
+    # Fuentes M3U / XMLTV Gratuitas y Legales recomendadas para Threadfin
+    # Añade estas URLs desde http://tv.media.local -> Playlist & XMLTV:
+    # ==========================================================================
+    #
+    # 1. TDTChannels (Canales oficiales en abierto de España — TV y Radio):
+    #    M3U:   https://www.tdtchannels.com/lists/tv.m3u8
+    #    EPG:   https://www.tdtchannels.com/epg/TV.xml.gz
+    #
+    # 2. Pluto TV (Canales FAST gratuitos oficiales por región, ej. ES/US):
+    #    Generador oficial comunitario / lista pública FAST (ejemplo ES):
+    #    M3U:   https://i.mjh.nz/PlutoTV/es.m3u8
+    #    EPG:   https://i.mjh.nz/PlutoTV/es.xml.gz
+    #
+    # 3. RTVE Play (Emisiones públicas oficiales en abierto — incluidas en TDTChannels)
+    #
+    # Conexión en Jellyfin -> Panel -> TV en directo:
+    #   - Sintonizador M3U: http://threadfin.homelab-media.svc.cluster.local:34400/m3u/threadfin.m3u
+    #   - Guía XMLTV:       http://threadfin.homelab-media.svc.cluster.local:34400/xmltv/threadfin.xml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threadfin
+  namespace: homelab-media
+  labels:
+    app: threadfin
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: threadfin
+  template:
+    metadata:
+      labels:
+        app: threadfin
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-worker
+      containers:
+        - name: threadfin
+          image: fyb3roptik/threadfin:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 34400
+          env:
+            - name: PUID
+              value: "1000"
+            - name: PGID
+              value: "1000"
+            - name: TZ
+              value: Europe/Madrid
+            - name: THREADFIN_PORT
+              value: "34400"
+          volumeMounts:
+            - name: storage
+              mountPath: /home/threadfin/conf
+              subPath: appdata/threadfin/conf
+            - name: temp-buffer
+              mountPath: /tmp/threadfin
+            - name: legal-sources
+              mountPath: /home/threadfin/legal-sources
+              readOnly: true
+          livenessProbe:
+            tcpSocket:
+              port: 34400
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: 34400
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 40m
+              memory: 32Mi
+            limits:
+              cpu: 400m
+              memory: 128Mi
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: homelab-storage-pvc
+        - name: temp-buffer
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: legal-sources
+          configMap:
+            name: threadfin-legal-sources
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: threadfin
+  namespace: homelab-media
+  labels:
+    app: threadfin
+spec:
+  type: ClusterIP
+  selector:
+    app: threadfin
+  ports:
+    - name: http
+      port: 34400
+      targetPort: 34400

@@ -1,0 +1,441 @@
+# ==============================================================================
+# Manifiesto Consolidado Compatible con Podman (`podman kube play`)
+# Permite levantar todo el ecosistema multimedia en ARM64 directamente con Podman
+# (compatible con Podman 4.x de Raspberry Pi OS Bookworm y Podman 5.x) sin K3s:
+#
+#   podman kube play k8s/podman-compatible/media-pod.yaml
+#   podman kube down k8s/podman-compatible/media-pod.yaml
+#
+# Notas de compatibilidad Podman:
+# - Todos los contenedores comparten el namespace de red del Pod con puertos
+#   100% únicos (cero colisiones) expuestos vía hostPort en la IP de la RPi.
+# - Usa volúmenes hostPath directos sobre /mnt/storage (sin subPath para total
+#   compatibilidad con Podman 4.x en Raspberry Pi OS).
+# - `/mnt/storage` montado como volumen único `/data` en *arr + qBittorrent (hardlinks).
+# - `/mnt/storage/media` montado en modo Solo Lectura (`readOnly: true`) en
+#   Jellyfin y Navidrome (regla crítica de no-borrado).
+# ==============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: homelab-media-stack
+  labels:
+    app: homelab-media-stack
+    homelab.arch: arm64
+spec:
+  restartPolicy: Always
+  containers:
+    # --- Módulo 1: Portal Centralizado (Homepage) ---
+    # La configuración inicial en /mnt/storage/appdata/homepage es generada por setup-nodes.sh
+    - name: homepage
+      image: ghcr.io/gethomepage/homepage:latest
+      ports:
+        - containerPort: 3000
+          hostPort: 3000
+      env:
+        - name: TZ
+          value: Europe/Madrid
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: HOMEPAGE_ALLOWED_HOSTS
+          value: "*"
+      volumeMounts:
+        - name: homepage-config
+          mountPath: /app/config
+      resources:
+        requests:
+          cpu: 50m
+          memory: 96Mi
+        limits:
+          cpu: 250m
+          memory: 256Mi
+
+    # --- Módulo 2: Servidor Multimedia (Jellyfin ARM64 + V4L2 + Media RO) ---
+    - name: jellyfin
+      image: jellyfin/jellyfin:latest
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        privileged: true
+      ports:
+        - containerPort: 8096
+          hostPort: 8096
+      env:
+        - name: TZ
+          value: Europe/Madrid
+      volumeMounts:
+        - name: jellyfin-config
+          mountPath: /config
+        - name: jellyfin-cache
+          mountPath: /cache
+        - name: media-ro
+          mountPath: /media
+          readOnly: true
+        - name: video10
+          mountPath: /dev/video10
+        - name: video11
+          mountPath: /dev/video11
+        - name: video12
+          mountPath: /dev/video12
+      resources:
+        requests:
+          cpu: 200m
+          memory: 384Mi
+        limits:
+          cpu: 2000m
+          memory: 1536Mi
+
+    # --- Módulo 3: Música (Navidrome ARM64 + Music RO) ---
+    - name: navidrome
+      image: deluan/navidrome:latest
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+      ports:
+        - containerPort: 4533
+          hostPort: 4533
+      env:
+        - name: TZ
+          value: Europe/Madrid
+        - name: ND_MUSICFOLDER
+          value: /music
+        - name: ND_DATAFOLDER
+          value: /data
+        - name: ND_PLAYLISTSPATH
+          value: playlists
+        - name: ND_AUTOIMPORTPLAYLISTS
+          value: "true"
+        - name: ND_SCANSCHEDULE
+          value: "@every 1h"
+      volumeMounts:
+        - name: navidrome-data
+          mountPath: /data
+        - name: music-ro
+          mountPath: /music
+          readOnly: true
+      resources:
+        requests:
+          cpu: 40m
+          memory: 64Mi
+        limits:
+          cpu: 400m
+          memory: 192Mi
+
+    # --- Módulo 4: TV Gratuita / FAST (Threadfin ARM64) ---
+    - name: threadfin
+      image: fyb3roptik/threadfin:latest
+      ports:
+        - containerPort: 34400
+          hostPort: 34400
+      env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: Europe/Madrid
+      volumeMounts:
+        - name: threadfin-conf
+          mountPath: /home/threadfin/conf
+        - name: threadfin-tmp
+          mountPath: /tmp/threadfin
+      resources:
+        requests:
+          cpu: 40m
+          memory: 48Mi
+        limits:
+          cpu: 400m
+          memory: 160Mi
+
+    # --- Módulo 5: Reproductor Universal Web PWA ---
+    - name: universal-player
+      image: localhost/homelab-universal-player:arm64
+      ports:
+        - containerPort: 8085
+          hostPort: 8085
+      resources:
+        requests:
+          cpu: 20m
+          memory: 24Mi
+        limits:
+          cpu: 150m
+          memory: 64Mi
+
+    # --- Módulo 6: Centro Educativo y Documentales ---
+    - name: edu-catalog
+      image: localhost/homelab-edu-catalog:arm64
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+      ports:
+        - containerPort: 8000
+          hostPort: 8000
+      env:
+        - name: TZ
+          value: Europe/Madrid
+        - name: EDU_DB_PATH
+          value: /data/edu_catalog.db
+      volumeMounts:
+        - name: edu-data
+          mountPath: /data
+      resources:
+        requests:
+          cpu: 40m
+          memory: 64Mi
+        limits:
+          cpu: 350m
+          memory: 192Mi
+
+    # --- Módulo 7: Prowlarr ---
+    - name: prowlarr
+      image: lscr.io/linuxserver/prowlarr:latest
+      ports:
+        - containerPort: 9696
+          hostPort: 9696
+      env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: Europe/Madrid
+        - name: UMASK
+          value: "002"
+      volumeMounts:
+        - name: prowlarr-config
+          mountPath: /config
+      resources:
+        requests:
+          cpu: 50m
+          memory: 96Mi
+        limits:
+          cpu: 400m
+          memory: 256Mi
+
+    # --- Módulo 7: Radarr (volumen único /data para hardlinks) ---
+    - name: radarr
+      image: lscr.io/linuxserver/radarr:latest
+      ports:
+        - containerPort: 7878
+          hostPort: 7878
+      env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: Europe/Madrid
+        - name: UMASK
+          value: "002"
+      volumeMounts:
+        - name: radarr-config
+          mountPath: /config
+        - name: storage-root
+          mountPath: /data
+      resources:
+        requests:
+          cpu: 75m
+          memory: 128Mi
+        limits:
+          cpu: 600m
+          memory: 320Mi
+
+    # --- Módulo 7: Sonarr (volumen único /data para hardlinks) ---
+    - name: sonarr
+      image: lscr.io/linuxserver/sonarr:latest
+      ports:
+        - containerPort: 8989
+          hostPort: 8989
+      env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: Europe/Madrid
+        - name: UMASK
+          value: "002"
+      volumeMounts:
+        - name: sonarr-config
+          mountPath: /config
+        - name: storage-root
+          mountPath: /data
+      resources:
+        requests:
+          cpu: 75m
+          memory: 128Mi
+        limits:
+          cpu: 600m
+          memory: 320Mi
+
+    # --- Módulo 7: Lidarr (volumen único /data para hardlinks) ---
+    - name: lidarr
+      image: lscr.io/linuxserver/lidarr:latest
+      ports:
+        - containerPort: 8686
+          hostPort: 8686
+      env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: Europe/Madrid
+        - name: UMASK
+          value: "002"
+      volumeMounts:
+        - name: lidarr-config
+          mountPath: /config
+        - name: storage-root
+          mountPath: /data
+      resources:
+        requests:
+          cpu: 75m
+          memory: 128Mi
+        limits:
+          cpu: 600m
+          memory: 320Mi
+
+    # --- Módulo 7: Bazarr ---
+    - name: bazarr
+      image: lscr.io/linuxserver/bazarr:latest
+      ports:
+        - containerPort: 6767
+          hostPort: 6767
+      env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: Europe/Madrid
+        - name: UMASK
+          value: "002"
+      volumeMounts:
+        - name: bazarr-config
+          mountPath: /config
+        - name: storage-root
+          mountPath: /data
+      resources:
+        requests:
+          cpu: 50m
+          memory: 160Mi
+        limits:
+          cpu: 400m
+          memory: 320Mi
+
+    # --- Módulo 7: qBittorrent (volumen único /data para hardlinks) ---
+    - name: qbittorrent
+      image: lscr.io/linuxserver/qbittorrent:latest
+      ports:
+        - containerPort: 8080
+          hostPort: 8080
+        - containerPort: 6881
+          hostPort: 6881
+          protocol: TCP
+        - containerPort: 6881
+          hostPort: 6881
+          protocol: UDP
+      env:
+        - name: PUID
+          value: "1000"
+        - name: PGID
+          value: "1000"
+        - name: TZ
+          value: Europe/Madrid
+        - name: UMASK
+          value: "002"
+        - name: WEBUI_PORT
+          value: "8080"
+        - name: TORRENTING_PORT
+          value: "6881"
+      volumeMounts:
+        - name: qbittorrent-config
+          mountPath: /config
+        - name: storage-root
+          mountPath: /data
+      resources:
+        requests:
+          cpu: 75m
+          memory: 128Mi
+        limits:
+          cpu: 750m
+          memory: 448Mi
+
+  volumes:
+    - name: homepage-config
+      hostPath:
+        path: /mnt/storage/appdata/homepage
+        type: Directory
+    - name: storage-root
+      hostPath:
+        path: /mnt/storage
+        type: Directory
+    - name: media-ro
+      hostPath:
+        path: /mnt/storage/media
+        type: Directory
+    - name: music-ro
+      hostPath:
+        path: /mnt/storage/media/music
+        type: Directory
+    - name: jellyfin-config
+      hostPath:
+        path: /mnt/storage/appdata/jellyfin/config
+        type: Directory
+    - name: jellyfin-cache
+      hostPath:
+        path: /mnt/storage/appdata/jellyfin/cache
+        type: Directory
+    - name: navidrome-data
+      hostPath:
+        path: /mnt/storage/appdata/navidrome
+        type: Directory
+    - name: threadfin-conf
+      hostPath:
+        path: /mnt/storage/appdata/threadfin/conf
+        type: Directory
+    - name: threadfin-tmp
+      emptyDir: {}
+    - name: edu-data
+      hostPath:
+        path: /mnt/storage/appdata/edu-catalog
+        type: Directory
+    - name: prowlarr-config
+      hostPath:
+        path: /mnt/storage/appdata/prowlarr
+        type: Directory
+    - name: radarr-config
+      hostPath:
+        path: /mnt/storage/appdata/radarr
+        type: Directory
+    - name: sonarr-config
+      hostPath:
+        path: /mnt/storage/appdata/sonarr
+        type: Directory
+    - name: lidarr-config
+      hostPath:
+        path: /mnt/storage/appdata/lidarr
+        type: Directory
+    - name: bazarr-config
+      hostPath:
+        path: /mnt/storage/appdata/bazarr
+        type: Directory
+    - name: qbittorrent-config
+      hostPath:
+        path: /mnt/storage/appdata/qbittorrent
+        type: Directory
+    - name: video10
+      hostPath:
+        path: /dev/video10
+        type: CharDevice
+    - name: video11
+      hostPath:
+        path: /dev/video11
+        type: CharDevice
+    - name: video12
+      hostPath:
+        path: /dev/video12
+        type: CharDevice

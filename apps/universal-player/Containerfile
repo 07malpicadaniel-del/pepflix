@@ -1,0 +1,27 @@
+# ==============================================================================
+# Módulo 5 — Reproductor Multimedia Universal Web (Local-First PWA)
+# Imagen multi-arquitectura ligera (linux/arm64 + linux/amd64) sobre nginx:alpine
+# ==============================================================================
+FROM nginx:1.27-alpine
+
+LABEL org.opencontainers.image.title="Homelab Universal Web Player" \
+      org.opencontainers.image.description="Reproductor local-first HTML5/PWA para vídeo, audio y subtítulos SRT/VTT" \
+      org.opencontainers.image.licenses="MIT"
+
+# Configurar Nginx para ejecutarse como usuario sin privilegios (puerto 8085)
+RUN rm -f /etc/nginx/conf.d/default.conf /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh && \
+    mkdir -p /var/cache/nginx /var/run/nginx /usr/share/nginx/html && \
+    chown -R nginx:nginx /var/cache/nginx /var/run/nginx /usr/share/nginx/html /etc/nginx/conf.d && \
+    sed -i 's|^pid\s\+.*;|pid /tmp/nginx.pid;|g' /etc/nginx/nginx.conf && \
+    sed -i '/^user\s\+nginx;/d' /etc/nginx/nginx.conf
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --chown=nginx:nginx index.html styles.css app.js manifest.webmanifest sw.js /usr/share/nginx/html/
+
+USER nginx
+EXPOSE 8085
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8085/healthz || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

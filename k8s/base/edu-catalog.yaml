@@ -1,0 +1,98 @@
+# ==============================================================================
+# Módulo 6 — Centro de Documentales y Contenido Educativo (FastAPI + SQLite)
+# Construido con `scripts/build-custom-apps.sh` (`podman build --platform linux/arm64`)
+# Persistencia SQLite (catálogo + favoritos) en /mnt/storage/appdata/edu-catalog.
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edu-catalog
+  namespace: homelab-media
+  labels:
+    app: edu-catalog
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: edu-catalog
+  template:
+    metadata:
+      labels:
+        app: edu-catalog
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - rpi-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: edu-catalog
+          image: localhost/homelab-edu-catalog:arm64
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: TZ
+              value: Europe/Madrid
+            - name: EDU_DB_PATH
+              value: /data/edu_catalog.db
+          volumeMounts:
+            - name: storage
+              mountPath: /data
+              subPath: appdata/edu-catalog
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 40m
+              memory: 64Mi
+            limits:
+              cpu: 350m
+              memory: 192Mi
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: homelab-storage-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edu-catalog
+  namespace: homelab-media
+  labels:
+    app: edu-catalog
+spec:
+  type: ClusterIP
+  selector:
+    app: edu-catalog
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
