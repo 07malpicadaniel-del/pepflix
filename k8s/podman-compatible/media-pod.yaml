@@ -163,6 +163,20 @@ spec:
           cpu: 150m
           memory: 64Mi
 
+    # --- Portal familiar Pepflix ---
+    - name: family-portal
+      image: localhost/homelab-family-portal:arm64
+      ports:
+        - containerPort: 8088
+          hostPort: 8088
+      resources:
+        requests:
+          cpu: 20m
+          memory: 24Mi
+        limits:
+          cpu: 150m
+          memory: 64Mi
+
     # --- Módulo 6: Centro Educativo y Documentales ---
     - name: edu-catalog
       image: localhost/homelab-edu-catalog:arm64
@@ -187,6 +201,28 @@ spec:
         limits:
           cpu: 350m
           memory: 192Mi
+
+    # --- Módulo 8: Jellyseerr ---
+    - name: jellyseerr
+      image: fallenbagel/jellyseerr:latest
+      ports:
+        - containerPort: 5055
+          hostPort: 5055
+      env:
+        - name: TZ
+          value: Europe/Madrid
+        - name: LOG_LEVEL
+          value: info
+      volumeMounts:
+        - name: jellyseerr-config
+          mountPath: /app/config
+      resources:
+        requests:
+          cpu: 50m
+          memory: 96Mi
+        limits:
+          cpu: 500m
+          memory: 320Mi
 
     # --- Módulo 7: Prowlarr ---
     - name: prowlarr
@@ -402,6 +438,10 @@ spec:
     - name: edu-data
       hostPath:
         path: /mnt/storage/appdata/edu-catalog
+        type: Directory
+    - name: jellyseerr-config
+      hostPath:
+        path: /mnt/storage/appdata/jellyseerr
         type: Directory
     - name: prowlarr-config
       hostPath:

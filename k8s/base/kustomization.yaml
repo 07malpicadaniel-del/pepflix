@@ -13,6 +13,8 @@ resources:
   - namespace.yaml
   - storage-pv-pvc.yaml
   - portal-homepage.yaml
+  - family-portal.yaml
+  - jellyseerr.yaml
   - jellyfin.yaml
   - navidrome.yaml
   - threadfin.yaml
@@ -21,4 +23,5 @@ resources:
   - arr-stack.yaml
   - qbittorrent.yaml
   - duplicate-scanner.yaml
+  - network-policy.yaml
   - ingress.yaml

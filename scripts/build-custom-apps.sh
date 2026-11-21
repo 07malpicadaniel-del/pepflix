@@ -5,6 +5,7 @@
 # Construye:
 #   - Módulo 5: apps/universal-player -> <registry>/homelab-universal-player:<tag>
 #   - Módulo 6: apps/edu-catalog      -> <registry>/homelab-edu-catalog:<tag>
+#   - Portal:   apps/family-portal    -> <registry>/homelab-family-portal:<tag>
 #
 # Opciones de despliegue de imágenes:
 #   --import-k3s             Importa los .tar generados en containerd de K3s local
@@ -77,6 +78,7 @@ fi
 
 PLAYER_IMAGE="${IMAGE_REGISTRY}/homelab-universal-player:${IMAGE_TAG}"
 EDU_IMAGE="${IMAGE_REGISTRY}/homelab-edu-catalog:${IMAGE_TAG}"
+PORTAL_IMAGE="${IMAGE_REGISTRY}/homelab-family-portal:${IMAGE_TAG}"
 
 build_image() {
   local name="$1"
@@ -99,21 +101,25 @@ build_image() {
 
 build_image "Módulo 5: Universal Web Player" "${REPO_ROOT}/apps/universal-player" "${PLAYER_IMAGE}"
 build_image "Módulo 6: Centro Educativo y Documentales" "${REPO_ROOT}/apps/edu-catalog" "${EDU_IMAGE}"
+build_image "Portal familiar Pepflix" "${REPO_ROOT}/apps/family-portal" "${PORTAL_IMAGE}"
 
 if [[ "${IMPORT_K3S}" == "true" || -n "${SYNC_WORKER}" ]]; then
   mkdir -p "${DIST_DIR}"
   PLAYER_TAR="${DIST_DIR}/homelab-universal-player-${IMAGE_TAG}.tar"
   EDU_TAR="${DIST_DIR}/homelab-edu-catalog-${IMAGE_TAG}.tar"
+  PORTAL_TAR="${DIST_DIR}/homelab-family-portal-${IMAGE_TAG}.tar"
 
   log_info "Exportando archivos OCI (.tar) para importación en K3s containerd..."
   podman save --format docker-archive -o "${PLAYER_TAR}" "${PLAYER_IMAGE}"
   podman save --format docker-archive -o "${EDU_TAR}" "${EDU_IMAGE}"
+  podman save --format docker-archive -o "${PORTAL_TAR}" "${PORTAL_IMAGE}"
 
   if [[ "${IMPORT_K3S}" == "true" ]]; then
     if command -v k3s >/dev/null 2>&1; then
       log_info "Importando imágenes en K3s local..."
       sudo k3s ctr images import "${PLAYER_TAR}"
       sudo k3s ctr images import "${EDU_TAR}"
+      sudo k3s ctr images import "${PORTAL_TAR}"
       log_ok "Imágenes importadas en K3s local."
     else
       log_warn "No se encontró el binario 'k3s' en este nodo; se omitió la importación local."
@@ -122,8 +128,8 @@ if [[ "${IMPORT_K3S}" == "true" || -n "${SYNC_WORKER}" ]]; then
 
   if [[ -n "${SYNC_WORKER}" ]]; then
     log_info "Sincronizando e importando imágenes en nodo worker (${SYNC_WORKER})..."
-    scp -q "${PLAYER_TAR}" "${EDU_TAR}" "${SYNC_WORKER}:/tmp/"
-    ssh "${SYNC_WORKER}" "sudo k3s ctr images import /tmp/$(basename "${PLAYER_TAR}") && sudo k3s ctr images import /tmp/$(basename "${EDU_TAR}") && rm -f /tmp/$(basename "${PLAYER_TAR}") /tmp/$(basename "${EDU_TAR}")"
+    scp -q "${PLAYER_TAR}" "${EDU_TAR}" "${PORTAL_TAR}" "${SYNC_WORKER}:/tmp/"
+    ssh "${SYNC_WORKER}" "sudo k3s ctr images import /tmp/$(basename "${PLAYER_TAR}") && sudo k3s ctr images import /tmp/$(basename "${EDU_TAR}") && sudo k3s ctr images import /tmp/$(basename "${PORTAL_TAR}") && rm -f /tmp/$(basename "${PLAYER_TAR}") /tmp/$(basename "${EDU_TAR}") /tmp/$(basename "${PORTAL_TAR}")"
     log_ok "Imágenes importadas correctamente en ${SYNC_WORKER}."
   fi
 fi
@@ -136,6 +142,7 @@ if [[ "${PUSH_REGISTRY}" == "true" ]]; then
   log_info "Publicando imágenes en ${IMAGE_REGISTRY}..."
   podman push "${PLAYER_IMAGE}"
   podman push "${EDU_IMAGE}"
+  podman push "${PORTAL_IMAGE}"
   log_ok "Imágenes publicadas en ${IMAGE_REGISTRY}."
 fi
 

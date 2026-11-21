@@ -30,6 +30,21 @@ services:
     mem_limit: 256m
     cpus: 0.50
 
+  # --- Portal familiar Pepflix (solo enlaces de familia, sin administración) ---
+  family-portal:
+    build:
+      context: ./apps/family-portal
+      dockerfile: Containerfile
+    image: localhost/homelab-family-portal:local
+    container_name: homelab-family-portal
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    cpus: 0.25
+
   # --- Módulo 2: Servidor Multimedia Principal (Jellyfin — Media Solo Lectura) ---
   jellyfin:
     image: jellyfin/jellyfin:latest
@@ -40,7 +55,7 @@ services:
       - "8096:8096"
     environment:
       TZ: America/Mexico_City
-      JELLYFIN_PublishedServerUrl: http://localhost:8096
+      JELLYFIN_PublishedServerUrl: ${JELLYFIN_PUBLISHED_URL:-http://192.168.100.46:8096}
     volumes:
       - ./local-storage/appdata/jellyfin/config:/config
       - ./local-storage/appdata/jellyfin/cache:/cache

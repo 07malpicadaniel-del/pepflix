@@ -43,6 +43,8 @@ Repositorio completo de **Infraestructura como Código (IaC)**, manifiestos **Ku
 | **4** | **Threadfin** (FAST/Live TV) | `fyb3roptik/threadfin:latest` | `rpi-worker` | `34400` | `tv.media.local` | — |
 | **5** | **Universal Player** (PWA) | `localhost/homelab-universal-player:arm64` | `rpi-worker` | `8085` | `player.media.local` | 100% Local-First (navegador) |
 | **6** | **Edu Catalog** (Documentales) | `localhost/homelab-edu-catalog:arm64` | `rpi-worker` | `8000` | `edu.media.local` | SQLite en `appdata/edu-catalog` |
+| **8** | **Jellyseerr** (Peticiones) | `fallenbagel/jellyseerr:latest` | `rpi-worker` | `5055` | `jellyseerr.media.local` | — |
+| **8** | **Portal familiar Pepflix** | `localhost/homelab-family-portal:arm64` | `rpi-worker` | `8088` | `pepflix.media.local` | — |
 | **7** | **Prowlarr** | `lscr.io/linuxserver/prowlarr:latest` | `rpi-master` | `9696` | `prowlarr.media.local` | — |
 | **7** | **Radarr** | `lscr.io/linuxserver/radarr:latest` | `rpi-master` | `7878` | `radarr.media.local` | `/data` (único — hardlinks) |
 | **7** | **Sonarr** | `lscr.io/linuxserver/sonarr:latest` | `rpi-master` | `8989` | `sonarr.media.local` | `/data` (único — hardlinks) |
@@ -58,7 +60,7 @@ Todos los manifiestos de `k8s/base/` y `k8s/podman-compatible/media-pod.yaml` es
 | Nodo (RPi 4 · 4 GB) | Cargas Permanentes | Requests RAM | Limits Máximos Simultáneos | Overhead OS + K3s | Margen Libre Estimado |
 |---|---|---:|---:|---:|---:|
 | **`rpi-master`** | Homepage (`96/256Mi`), Prowlarr (`96/256Mi`), Radarr (`128/320Mi`), Sonarr (`128/320Mi`), Lidarr (`128/320Mi`), Bazarr (`160/320Mi`), qBittorrent (`128/448Mi`) | **864 MiB** | **2,240 MiB (~2.19 GiB)** | ~750 MiB | **~0.85–1.0 GiB** |
-| **`rpi-worker`** | Jellyfin (`384/1536Mi`), Navidrome (`48/128Mi`), Threadfin (`32/128Mi`), Universal Player (`24/64Mi`), Edu Catalog (`64/192Mi`) | **552 MiB** | **2,048 MiB (2.00 GiB)** | ~300 MiB | **~1.45 GiB** |
+| **`rpi-worker`** | Jellyfin (`384/1536Mi`), Jellyseerr (`96/320Mi`), Navidrome (`48/128Mi`), Threadfin (`32/128Mi`), Universal Player (`24/64Mi`), Edu Catalog (`64/192Mi`), Portal Pepflix (`24/64Mi`) | **672 MiB** | **2,432 MiB (~2.38 GiB)** | ~300 MiB | **~0.75 GiB** |
 
 > **Consejo para RPi 4 (4 GB):** El CronJob `czkawka-duplicate-scanner` corre únicamente los domingos a las 04:00 (`64Mi` req / `256Mi` lim). Si en algún momento no utilizas Lidarr o Bazarr, puedes escalar sus réplicas a `0` (`kubectl -n homelab-media scale deploy/lidarr --replicas=0`) para liberar RAM adicional.
 
@@ -71,7 +73,7 @@ cd /home/daniel/.gemini/antigravity-ide/scratch/homelab-media-stack
 docker compose -f docker-compose.local-pc.yml up -d --build
 ```
 
-Portal centralizado disponible en `http://localhost:3000` (integrando los contenedores `*arr`/qBittorrent ya activos en tu PC junto con Jellyfin `:8096`, Navidrome `:4533`, Threadfin `:34400`, Universal Player PWA `:8085`, Centro Educativo `:8000`, Lidarr `:8686` y Bazarr `:6767`).
+Portal centralizado disponible en `http://localhost:3000` y portal familiar Pepflix en `http://localhost:8088` (integrando los contenedores `*arr`/qBittorrent ya activos en tu PC junto con Jellyfin `:8096`, Navidrome `:4533`, Threadfin `:34400`, Universal Player PWA `:8085`, Centro Educativo `:8000`, Lidarr `:8686` y Bazarr `:6767`).
 
 ---
 
@@ -86,6 +88,7 @@ Portal centralizado disponible en `http://localhost:3000` (integrando los conten
    - `*arr` y `qBittorrent` montan **un único volumen `/data` -> `/mnt/storage`** (sin dividir `torrents` y `media` en montajes separados) para evitar `EXDEV` y permitir enlaces duros instantáneos con **0 bytes adicionales**.
 3. **Protección de Recursos Raspberry Pi:** Todos los Deployments y CronJobs definen `resources.requests` y `resources.limits` calibrados para Raspberry Pi 4/5 (4 GB–8 GB RAM).
 4. **Cumplimiento Legal y Ético:** Plantillas, catálogos, radios y listas TV configuradas exclusivamente para contenido propio, dominio público, Creative Commons, NASA, MIT OpenCourseWare, Internet Archive, Wikimedia Commons y plataformas FAST oficiales (Pluto TV, RTVE Play, TDTChannels).
+5. **Hardening por defecto:** Pod Security Standards en `baseline`, `NetworkPolicy` con denegación por defecto, portal familiar sin privilegios y separación entre la experiencia de familia y los paneles de administración. Detalles y excepciones en [`docs/INDEXERS-Y-TRACKERS.md`](docs/INDEXERS-Y-TRACKERS.md).
 
 ---
 
@@ -136,7 +139,7 @@ ls -la /mnt/storage
 
 ---
 
-### Paso 2: Construir las Aplicaciones Web Personalizadas (Módulos 5 y 6) en ARM64
+### Paso 2: Construir las Aplicaciones Web Personalizadas (Módulos 5, 6 y Portal Pepflix) en ARM64
 
 Ejecuta `scripts/build-custom-apps.sh` con **Podman** (en `rpi-worker` directamente, o desde `rpi-master` sincronizando automáticamente los `.tar` hacia `rpi-worker`):
 
@@ -151,7 +154,7 @@ Ejecuta `scripts/build-custom-apps.sh` con **Podman** (en `rpi-worker` directame
 ./scripts/build-custom-apps.sh --platform linux/arm64 --import-k3s
 ```
 
-Comprueba en `rpi-worker` que containerd de K3s tiene ambas imágenes cargadas:
+Comprueba en `rpi-worker` que containerd de K3s tiene las imágenes cargadas:
 ```bash
 sudo k3s ctr images list | grep homelab-
 ```
@@ -197,7 +200,7 @@ podman ps --pod
 ```
 
 Puertos directos en modo Podman:
-- Portal Homepage: `:3000` · Jellyfin: `:8096` · Navidrome: `:4533` · Threadfin: `:34400`
+- Portal Homepage: `:3000` · **Portal Pepflix: `:8088`** · Jellyfin: `:8096` · Jellyseerr: `:5055` · Navidrome: `:4533` · Threadfin: `:34400`
 - Universal Player PWA: `:8085` · Centro Educativo: `:8000`
 - Prowlarr: `:9696` · Radarr: `:7878` · Sonarr: `:8989` · Lidarr: `:8686` · Bazarr: `:6767` · qBittorrent: `:8080`
 
@@ -208,7 +211,7 @@ Puertos directos en modo Podman:
 En **Pi-hole** / **AdGuard Home** (o en el archivo `/etc/hosts` de tus equipos cliente), apunta los subdominios a la IP de `rpi-master` (`192.168.1.50`):
 
 ```text
-192.168.1.50  media.local portal.media.local jellyfin.media.local music.media.local tv.media.local player.media.local edu.media.local prowlarr.media.local sonarr.media.local radarr.media.local lidarr.media.local bazarr.media.local downloads.media.local
+192.168.1.50  media.local portal.media.local pepflix.media.local family.media.local jellyfin.media.local jellyseerr.media.local music.media.local tv.media.local player.media.local edu.media.local prowlarr.media.local sonarr.media.local radarr.media.local lidarr.media.local bazarr.media.local downloads.media.local
 ```
 
 Abre el portal centralizado en tu navegador: **`http://portal.media.local`** (o `http://media.local`).
@@ -232,6 +235,11 @@ Abre el portal centralizado en tu navegador: **`http://portal.media.local`** (o 
    - `tv` → `/data/torrents/tv`
    - `music` → `/data/torrents/music`
    - `documentaries` → `/data/torrents/documentaries`
+5. (Opcional) Añade trackers públicos filtrados a qBittorrent (no a Prowlarr):
+   ```bash
+   ./scripts/sync-public-trackers.sh                    # simulación
+   ./scripts/sync-public-trackers.sh --apply            # pide la contraseña de qBittorrent
+   ```
 
 ### 4.2 Configurar Rutas Raíz, Hardlinks y Recycle Bin en Radarr, Sonarr y Lidarr
 En cada servicio (`radarr.media.local`, `sonarr.media.local`, `lidarr.media.local`):
@@ -254,8 +262,11 @@ En cada servicio (`radarr.media.local`, `sonarr.media.local`, `lidarr.media.loca
    - **Completed Download Handling → Remove Completed:** **Desactivado** si deseas seguir compartiendo (seeding) sin romper el hardlink.
 
 ### 4.3 Conectar Prowlarr con Sonarr, Radarr y Lidarr
+
+> **Importante — indexers ≠ trackers:** Prowlarr gestiona **indexers** (buscadores). La lista `ngosang/trackerslist` son **trackers** y se configura en **qBittorrent**, no en Prowlarr. Para el detalle técnico, legal y de seguridad consulta [`docs/INDEXERS-Y-TRACKERS.md`](docs/INDEXERS-Y-TRACKERS.md). No integres indexers de piratería (1337x, EZTV, YTS, Nyaa, RuTracker, The Pirate Bay, DonTorrent, MejorTorrent, EliteTorrent, DivxTotal, Cinecalidad, etc.) para contenido protegido.
+
 1. Abre **`http://prowlarr.media.local`**.
-2. Añade tus **indexers / trackers abiertos y legales** en **Indexers → + Add Indexer** (por ejemplo: *Internet Archive*, *Academic Torrents*, *LinuxTracker*, *Public Domain Torrents* o feeds RSS legales).
+2. Añade tus **indexers abiertos y legales** en **Indexers → + Add Indexer** (por ejemplo: *Internet Archive*, *Academic Torrents*, *LinuxTracker*, *Public Domain Torrents* o feeds RSS legales).
 3. Copia la **API Key** de cada servicio desde `Settings → General → Security` en Sonarr, Radarr y Lidarr.
 4. En **Prowlarr → Settings → Apps → +** añade cada aplicación con las URLs internas del clúster:
 
@@ -337,6 +348,58 @@ kubectl -n homelab-media create secret generic homepage-secrets \
 
 kubectl -n homelab-media rollout restart deploy/homepage
 ```
+
+### Portal familiar Pepflix (experiencia para tu padre)
+
+El Módulo 8 publica una landing sencilla en `http://pepflix.media.local` (o `http://localhost:8088` en Docker Compose). Solo muestra accesos de familia:
+
+- **Jellyfin** para ver películas, series y TV.
+- **Jellyseerr** para pedir contenido.
+- **Edu Catalog**, **Threadfin** y **Navidrome**.
+- Enlaces a fuentes legales (Internet Archive, NASA+, MIT OCW, Wikimedia, RTVE Play, TDTChannels).
+
+No muestra Prowlarr, qBittorrent, Sonarr, Radarr, Lidarr ni Bazarr. El enlace de **Administración** del pie lleva al portal técnico (`portal.media.local`) y debe quedar solo para ti. Jellyseerr se publica en `jellyseerr.media.local` (Módulo 8) para que las peticiones de la familia lleguen a Sonarr/Radarr.
+
+Recomendaciones para la cuenta de tu padre:
+
+1. El usuario de Jellyfin ya creado es `Daniel` (sin permisos de administrador).
+2. Limita las bibliotecas y la clasificación por edad.
+3. Crea un usuario en Jellyseerr con permisos de petición, no de administración.
+4. Deja el usuario administrador de Jellyfin con PIN.
+5. No compartas las API keys ni el enlace de administración.
+
+Guías ya creadas para este caso:
+
+- [`docs/MANUAL-PEPFLIX-PAPA.md`](docs/MANUAL-PEPFLIX-PAPA.md) — manual imprimible y sin tecnicismos para tu padre: cómo moverse por la interfaz y ver contenido.
+- [`docs/INSTALACION-PEPFLIX-TV.md`](docs/INSTALACION-PEPFLIX-TV.md) — cómo dejar la app de Jellyfin en la TV, con sección específica para **Samsung Tizen** y alternativas (Android TV, Fire TV, LG/Apple TV o stick HDMI).
+- [`docs/ADMIN-CATALOGO-E-INDEXADORES.md`](docs/ADMIN-CATALOGO-E-INDEXADORES.md) — cómo ampliar el catálogo legal y añadir indexadores legales a Prowlarr por URL.
+
+Para la TV, la dirección fija es `http://192.168.100.46:8096` y el servidor se llama **Pepflix**. Reserva esa IP en el router para que no cambie.
+
+### Catálogo legal e indexadores
+
+Pepflix usa contenido de **dominio público** de Internet Archive. Para ampliar el
+catálogo:
+
+```bash
+# Simular
+./scripts/fetch-legal-catalog.py --dry-run --type all --limit 10
+
+# Descargar un lote
+./scripts/fetch-legal-catalog.py --apply --type all \
+  --limit 20 --scan-limit 100 --max-size-mb 800 --prefer-small
+```
+
+Para añadir un indexador legal a Prowlarr usando la URL de su interfaz:
+
+```bash
+./scripts/add-legal-indexer.py --url https://archive.org/ --apply
+./scripts/add-legal-indexer.py --list
+```
+
+Prowlarr solo acepta definiciones que ya trae instaladas. El script valida el
+dominio contra una lista blanca legal y no integra indexadores de piratería.
+Detalles en [`docs/ADMIN-CATALOGO-E-INDEXADORES.md`](docs/ADMIN-CATALOGO-E-INDEXADORES.md).
 
 ### Ejecutar y Consultar el Escáner Anti-Duplicados (Czkawka CLI)
 El `CronJob` se ejecuta automáticamente cada domingo a las `04:00` en modo **solo lectura** (sin borrar ningún archivo). Para lanzar una ejecución manual inmediata:

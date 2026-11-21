@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0d12">
+  <meta name="description" content="Pepflix, la biblioteca multimedia de casa">
+  <title>Pepflix · Biblioteca de casa</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Pepflix, inicio">
+      <span class="brand-mark">P</span>
+      <span class="brand-text">
+        <strong>PEPFLIX</strong>
+        <small>La biblioteca de casa</small>
+      </span>
+    </a>
+    <span class="badge">Contenido legal</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Todo en un mismo sitio</p>
+      <h1>Elige qué ver hoy.</h1>
+      <p class="lede">Películas, series, documentales, música y televisión gratuita. Sin anuncios y sin líos.</p>
+
+      <a class="button button-primary" data-service="jellyfin" data-port="8096" href="http://jellyfin.media.local">
+        Entrar a Jellyfin
+      </a>
+    </section>
+
+    <section class="grid" aria-label="Servicios de la biblioteca">
+      <a class="card card-featured" data-service="jellyfin" data-port="8096" href="http://jellyfin.media.local">
+        <span class="card-icon">JF</span>
+        <span class="card-body">
+          <span class="card-kicker">Lo principal</span>
+          <strong>Películas y series</strong>
+          <span>Tu biblioteca personal, con subtítulos y reanudación.</span>
+        </span>
+        <span class="card-arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="card" data-service="jellyseerr" data-port="5055" href="http://jellyseerr.media.local">
+        <span class="card-icon">JS</span>
+        <span class="card-body">
+          <span class="card-kicker">Peticiones</span>
+          <strong>Pedir algo</strong>
+          <span>Solicita una película o serie y aparecerá cuando esté lista.</span>
+        </span>
+        <span class="card-arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="card" data-service="edu" data-port="8000" href="http://edu.media.local">
+        <span class="card-icon">EDU</span>
+        <span class="card-body">
+          <span class="card-kicker">Aprender</span>
+          <strong>Documentales y cursos</strong>
+          <span>NASA, Internet Archive, MIT y Wikimedia, seleccionados.</span>
+        </span>
+        <span class="card-arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="card" data-service="tv" data-port="34400" href="http://tv.media.local">
+        <span class="card-icon">TV</span>
+        <span class="card-body">
+          <span class="card-kicker">En directo</span>
+          <strong>Televisión gratis</strong>
+          <span>Canales FAST y emisiones abiertas en un solo lugar.</span>
+        </span>
+        <span class="card-arrow" aria-hidden="true">→</span>
+      </a>
+
+      <a class="card" data-service="music" data-port="4533" href="http://music.media.local">
+        <span class="card-icon">MUS</span>
+        <span class="card-body">
+          <span class="card-kicker">Escuchar</span>
+          <strong>Música</strong>
+          <span>Tu colección, radios libres y podcasts.</span>
+        </span>
+        <span class="card-arrow" aria-hidden="true">→</span>
+      </a>
+    </section>
+
+    <section class="legal" aria-labelledby="legal-title">
+      <div class="legal-copy">
+        <p class="eyebrow">Fuentes abiertas</p>
+        <h2 id="legal-title">Cine, ciencia y cultura sin barreras</h2>
+        <p>Accesos directos a archivos públicos y plataformas gratuitas. Cada obra conserva su licencia original.</p>
+      </div>
+      <div class="legal-links">
+        <a href="https://archive.org/details/movies" target="_blank" rel="noopener noreferrer">Internet Archive</a>
+        <a href="https://plus.nasa.gov/" target="_blank" rel="noopener noreferrer">NASA+</a>
+        <a href="https://ocw.mit.edu/" target="_blank" rel="noopener noreferrer">MIT OpenCourseWare</a>
+        <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener noreferrer">Wikimedia Commons</a>
+        <a href="https://www.rtve.es/play/" target="_blank" rel="noopener noreferrer">RTVE Play</a>
+        <a href="https://www.tdtchannels.com/" target="_blank" rel="noopener noreferrer">TDTChannels</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Pepflix · Biblioteca familiar autohospedada</span>
+    <a data-service="homepage" data-port="3000" href="http://portal.media.local">Administración</a>
+  </footer>
+</body>
+</html>

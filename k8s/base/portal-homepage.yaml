@@ -73,8 +73,8 @@ metadata:
   namespace: homelab-media
 data:
   settings.yaml: |
-    title: Homelab Media Hub (2x Raspberry Pi)
-    description: Ecosistema Multimedia Centralizado ARM64 — K3s & Podman
+    title: Pepflix · Administración (2x Raspberry Pi)
+    description: Panel técnico del ecosistema multimedia ARM64 — K3s & Podman
     theme: dark
     color: slate
     headerStyle: clean
@@ -131,6 +131,14 @@ data:
               enableBlocks: true
               enableNowPlaying: true
 
+        - Jellyseerr (Peticiones):
+            icon: jellyseerr.png
+            href: http://jellyseerr.media.local
+            description: Peticiones de películas y series desde Jellyfin
+            namespace: homelab-media
+            app: jellyseerr
+            siteMonitor: http://jellyseerr.homelab-media.svc.cluster.local:5055
+
         - Navidrome:
             icon: navidrome.png
             href: http://music.media.local
@@ -148,6 +156,14 @@ data:
             siteMonitor: http://threadfin.homelab-media.svc.cluster.local:34400
 
     - Apps Web & Educación:
+        - Pepflix Family:
+            icon: mdi-account-group-#ffc857
+            href: http://pepflix.media.local
+            description: Portal familiar con enlaces a Jellyfin, peticiones, TV y documentales
+            namespace: homelab-media
+            app: family-portal
+            siteMonitor: http://family-portal.homelab-media.svc.cluster.local:8088/healthz
+
         - Universal Player PWA:
             icon: mdi-play-circle-#818cf8
             href: http://player.media.local

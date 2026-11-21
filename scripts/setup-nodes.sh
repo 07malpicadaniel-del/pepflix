@@ -268,6 +268,7 @@ if [[ "${ROLE}" == "master" ]]; then
     "${STORAGE_ROOT}/appdata/navidrome" \
     "${STORAGE_ROOT}/appdata/threadfin/conf" \
     "${STORAGE_ROOT}/appdata/edu-catalog" \
+    "${STORAGE_ROOT}/appdata/jellyseerr" \
     "${STORAGE_ROOT}/appdata/prowlarr" \
     "${STORAGE_ROOT}/appdata/sonarr" \
     "${STORAGE_ROOT}/appdata/radarr" \
@@ -314,7 +315,7 @@ EOF
   HP_DIR="${STORAGE_ROOT}/appdata/homepage"
   if [[ ! -f "${HP_DIR}/services.yaml" ]]; then
     cat <<'EOF' > "${HP_DIR}/settings.yaml"
-title: Homelab Media Hub (Podman ARM64)
+title: Pepflix · Homelab Media Hub (Podman ARM64)
 description: Ecosistema Multimedia Autohospedado — Modo Podman Kube Play
 theme: dark
 color: slate
@@ -341,6 +342,10 @@ EOF
         icon: jellyfin.png
         href: http://localhost:8096
         description: Cine, Series, Vídeos Personales y Live TV
+    - Jellyseerr (Peticiones):
+        icon: jellyseerr.png
+        href: http://localhost:5055
+        description: Peticiones de películas y series
     - Navidrome:
         icon: navidrome.png
         href: http://localhost:4533
@@ -350,6 +355,10 @@ EOF
         href: http://localhost:34400
         description: Proxy M3U/EPG para Pluto TV, RTVE Play y TDTChannels
 - Apps Web & Educación:
+    - Pepflix Family:
+        icon: mdi-account-group-#ffc857
+        href: http://localhost:8088
+        description: Portal familiar con enlaces a Jellyfin, peticiones, TV y documentales
     - Universal Player PWA:
         icon: mdi-play-circle-#818cf8
         href: http://localhost:8085

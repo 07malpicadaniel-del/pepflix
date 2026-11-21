@@ -35,6 +35,28 @@ spec:
                 port:
                   number: 3000
 
+    # Portal familiar Pepflix (solo enlaces de familia, sin paneles de administración)
+    - host: pepflix.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: family-portal
+                port:
+                  number: 8088
+    - host: family.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: family-portal
+                port:
+                  number: 8088
+
     # Módulo 2: Servidor Multimedia Principal (Jellyfin)
     - host: jellyfin.media.local
       http:
@@ -46,6 +68,16 @@ spec:
                 name: jellyfin
                 port:
                   number: 8096
+    - host: jellyseerr.media.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jellyseerr
+                port:
+                  number: 5055
 
     # Módulo 3: Plataforma de Música (Navidrome)
     - host: music.media.local
